@@ -81,4 +81,57 @@ describe('splitAssistantText', () => {
       { kind: 'markdown', text: '```json\n{"a":1}\n```' },
     ])
   })
+
+  // XML-tag format tests
+
+  it('extracts a complete schemaJson XML tag', () => {
+    const text = 'before\n<schemaJson>\n{"componentName":"Page"}\n</schemaJson>\nafter'
+    expect(splitAssistantText(text, false)).toEqual([
+      { kind: 'markdown', text: 'before\n' },
+      { kind: 'schema', text: '{"componentName":"Page"}\n', complete: true },
+      { kind: 'markdown', text: '\nafter' },
+    ])
+  })
+
+  it('extracts multiple complete schemaJson XML tags', () => {
+    const text = '<schemaJson>{"a":1}</schemaJson>\n<schemaJson>{"b":2}</schemaJson>'
+    expect(splitAssistantText(text, false)).toEqual([
+      { kind: 'schema', text: '{"a":1}', complete: true },
+      { kind: 'markdown', text: '\n' },
+      { kind: 'schema', text: '{"b":2}', complete: true },
+    ])
+  })
+
+  it('supports both formats in the same message', () => {
+    const text = '<schemaJson>{"tag":1}</schemaJson>\n```schemaJson\n{"fence":2}\n```'
+    expect(splitAssistantText(text, false)).toEqual([
+      { kind: 'schema', text: '{"tag":1}', complete: true },
+      { kind: 'markdown', text: '\n' },
+      { kind: 'schema', text: '{"fence":2}\n', complete: true },
+    ])
+  })
+
+  it('treats a trailing open XML tag as incomplete while streaming', () => {
+    const text = 'intro\n<schemaJson>\n{"componentName":"Page"'
+    expect(splitAssistantText(text, true)).toEqual([
+      { kind: 'markdown', text: 'intro\n' },
+      { kind: 'schema', text: '{"componentName":"Page"', complete: false },
+    ])
+  })
+
+  it('keeps a trailing open XML tag as markdown when not streaming', () => {
+    const text = 'intro\n<schemaJson>\n{"componentName":"Page"'
+    expect(splitAssistantText(text, false)).toEqual([
+      { kind: 'markdown', text: 'intro\n<schemaJson>\n{"componentName":"Page"' },
+    ])
+  })
+
+  it('accepts an empty but closed schemaJson XML tag', () => {
+    const text = 'before\n<schemaJson></schemaJson>\nafter'
+    expect(splitAssistantText(text, false)).toEqual([
+      { kind: 'markdown', text: 'before\n' },
+      { kind: 'schema', text: '', complete: true },
+      { kind: 'markdown', text: '\nafter' },
+    ])
+  })
 })
