@@ -7,7 +7,7 @@ import { Fragment, memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
-import type { GenuiAssistantNodeViewProps } from './assistant-props.ts'
+import { blockBelongsToGroupPart, type GenuiAssistantNodeViewProps } from './assistant-props.ts'
 import { GenuiTextBody } from './GenuiTextBody.tsx'
 import { markdownLabels } from './markdown-labels.ts'
 import css from './genui-assistant.module.css'
@@ -17,7 +17,7 @@ export const ASSISTANT_STEP_PRIORITY = -1
 
 /** Keyed Chat Node view that replaces the stock assistant bubble. */
 export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
-  node, renderMessageImages, fileMentions, t, useTurnData, openFile, turnProcess, inputActions,
+  node, renderMessageImages, fileMentions, t, useTurnData, openFile, turnProcess, inputActions, groupPart,
 }: GenuiAssistantNodeViewProps) {
   const data = node.data
   const streaming = data.status === 'running'
@@ -65,16 +65,12 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
   }), [inputActions])
 
   const blocks = data.blocks
-  const hasVisible = streaming
-    || interrupted
-    || blocks.some(block => block.kind !== 'tool-call')
-  if (!hasVisible) return null
-
   const rendered: ReactNode[] = []
   const last = blocks.length - 1
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block === undefined) continue
+    if (!blockBelongsToGroupPart(block.kind, groupPart)) continue
     switch (block.kind) {
       case 'text':
         rendered.push(
@@ -135,11 +131,19 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
     }
   }
 
+  // The stopped line belongs with the reply. A reasoning mount would paint it a second time.
+  const showStopped = interrupted && groupPart !== 'reasoning'
+  // Older hosts mount the step once and use an empty shell as the streaming
+  // placeholder. A split response mount with nothing of its own yet should
+  // stay empty instead of adding a second blank bubble.
+  const legacyStreamingShell = streaming && groupPart === undefined
+  if (rendered.length === 0 && !showStopped && !legacyStreamingShell) return null
+
   return (
     <div className={css.root} data-streaming={streaming || undefined} data-dsh-genui-assistant="">
       <div className={css.body}>
         {rendered}
-        {interrupted ? <span className={css.stopped}>{t('message.stopped')}</span> : null}
+        {showStopped ? <span className={css.stopped}>{t('message.stopped')}</span> : null}
       </div>
     </div>
   )

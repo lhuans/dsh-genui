@@ -4,6 +4,8 @@ import {
   createGenuiPromptControl,
   createGenuiPromptControlHandler,
   createPersistedPromptControl,
+  findPromptSettingsEntry,
+  openPromptSettings,
 } from '../src/prompt-control.ts'
 
 const section = { name: 'genui:cards', order: 80, text: 'GenUI prompt' }
@@ -181,5 +183,47 @@ describe('createGenuiPromptControlHandler', () => {
     await handler(mockReq('POST', [JSON.stringify({})]), missingEnabled)
     expect(missingEnabled.statusCodeOut).toBe(400)
     expect(control.isEnabled()).toBe(false)
+  })
+})
+
+describe('openPromptSettings', () => {
+  it('keeps the DSH 0.1 register namespace', () => {
+    const register = vi.fn(() => ({
+      get: () => ({ enabled: true }),
+      update: async () => {},
+    }))
+    const scope = openPromptSettings({ register }, { configEnabled: false, schema: { kind: 'legacy' } })
+    expect(register).toHaveBeenCalledWith('dsh-genui', { kind: 'legacy' })
+    expect(scope?.get().enabled).toBe(true)
+  })
+
+  it('writes promptEnabled on the DSH 0.2 entry that owns the field', async () => {
+    const update = vi.fn(async () => {})
+    const scope = openPromptSettings({
+      describe: () => [{ ns: 'genui', value: { promptEnabled: false }, schema: {} }],
+      update,
+    }, { configEnabled: false, schema: {} })
+    expect(scope?.get().enabled).toBe(false)
+    await scope?.update({ enabled: true })
+    expect(update).toHaveBeenCalledWith('genui', { promptEnabled: true })
+  })
+
+  it('falls back to the bundled entry id before describe can see this plugin', async () => {
+    const update = vi.fn(async () => {})
+    const scope = openPromptSettings({
+      describe: () => [],
+      update,
+    }, { configEnabled: true, schema: {} })
+    await scope?.update({ enabled: false })
+    expect(update).toHaveBeenCalledWith('genui', { promptEnabled: false })
+  })
+})
+
+describe('findPromptSettingsEntry', () => {
+  it('prefers the bundled genui id over another row that mentions the field', () => {
+    expect(findPromptSettingsEntry([
+      { ns: 'other', value: { promptEnabled: true }, schema: {} },
+      { ns: 'genui', value: {}, schema: { dict: { promptEnabled: 1 } } },
+    ])).toBe('genui')
   })
 })

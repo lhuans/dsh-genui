@@ -11,9 +11,10 @@ import {
   createGenuiPromptControl,
   createGenuiPromptControlHandler,
   createPersistedPromptControl,
+  openPromptSettings,
   type GenuiPromptControl,
   type GenuiPromptSettings,
-  type GenuiPromptSettingsScope,
+  type PromptSettingsHost,
 } from './prompt-control.ts'
 import { GENUI_PROMPT_CONTROL_URL } from './prompt-control-url.ts'
 import {
@@ -25,6 +26,15 @@ import {
 
 export const name = 'dsh-genui'
 export const inject = ['systemPrompt', 'webServer']
+
+declare global {
+  namespace Schemastery {
+    interface Meta<T = any> {
+      /** DSH 0.2 settings writes only fields marked volatile. */
+      volatile?: boolean
+    }
+  }
+}
 
 interface WebServer {
   register(route: {
@@ -40,24 +50,20 @@ export interface Config {
   sectionOrder: number
   /** Stable section name in the prompt registry. */
   sectionName: string
+  /** Whether the authoring prompt starts enabled. Live-editable on DSH 0.2. */
+  promptEnabled: boolean
 }
 
 export const Config: z<Config> = z.object({
   sectionOrder: z.number().default(80),
   sectionName: z.string().default('genui:cards'),
+  promptEnabled: z.boolean().default(true).extra('volatile', true),
 })
 
 /** Settings schema for the user's last prompt-toggle choice. */
 export const PromptSettings: z<GenuiPromptSettings> = z.object({
   enabled: z.boolean().default(true),
 })
-
-/** The optional host settings seam used to persist the toggle. */
-interface SettingsHost {
-  settings: {
-    register(namespace: string, schema: z<GenuiPromptSettings>): GenuiPromptSettingsScope
-  }
-}
 
 /**
  * Create the GenUI authoring guidance for the host system-prompt registry.
@@ -118,8 +124,15 @@ export function apply(ctx: Context, config: Config): void {
   }, 'dsh-genui: prompt toggle state')
 
   ctx.inject(['settings'], (settingsCtx) => {
-    const settings = (settingsCtx as Context & SettingsHost).settings
-    const scope = settings.register('dsh-genui', PromptSettings)
+    const settings = (settingsCtx as Context & { settings: PromptSettingsHost }).settings
+    const scope = openPromptSettings(settings, {
+      configEnabled: config.promptEnabled !== false,
+      schema: PromptSettings,
+    })
+    if (scope === undefined) {
+      ctx.logger.warn('dsh-genui: prompt toggle will not persist')
+      return
+    }
     ctx.logger.debug('dsh-genui: settings service attached')
     settingsCtx.effect(() => {
       // Persist explicit clicks, but never write the unload-time cleanup state.
