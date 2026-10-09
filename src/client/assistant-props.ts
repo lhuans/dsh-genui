@@ -52,6 +52,21 @@ export interface GenuiTurnProcessOwner {
   setOpen(open: boolean): void
 }
 
+/**
+ * Whether this block belongs on the current assistant-step mount.
+ * DSH paints the same step once per group part (`reasoning` and `response`).
+ * Hosts that still mount the step a single time omit `groupPart`; those
+ * mounts keep every block.
+ * @param kind - assistant block kind.
+ * @param groupPart - chat group this mount is painting, when the host splits one.
+ * @returns true when the block should be painted in this mount.
+ */
+export function blockBelongsToGroupPart(kind: string, groupPart: string | undefined): boolean {
+  if (groupPart === 'reasoning') return kind === 'reasoning'
+  if (groupPart === 'response') return kind !== 'reasoning'
+  return true
+}
+
 /** Props passed by conversation.chat.node for key assistant-step. */
 export interface GenuiAssistantNodeViewProps {
   readonly node: {
@@ -76,4 +91,9 @@ export interface GenuiAssistantNodeViewProps {
   readonly turnProcess?: GenuiTurnProcessOwner | undefined
   /** Present on session-scoped chat nodes via the standard session kit. */
   readonly inputActions?: GenuiInputActions | undefined
+  /**
+   * Which half of a split assistant step this mount paints.
+   * `reasoning` keeps only reasoning blocks; `response` keeps everything else.
+   */
+  readonly groupPart?: string | undefined
 }

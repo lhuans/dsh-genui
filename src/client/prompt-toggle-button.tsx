@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { IconSparkle16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { GENUI_PROMPT_CONTROL_URL } from '../prompt-control-url.ts'
+import { pickSparkleIcon } from './sparkle-icon.ts'
 import css from './prompt-toggle-button.module.css'
 
 /** Composer slot props; the toggle reads its state from the host route. */
@@ -12,6 +13,8 @@ export type PromptToggleButtonProps = PropsRuntime<'conversation.input.left'>
  * Turn the GenUI authoring prompt on or off from the composer tool row.
  * Rendering stays installed either way; only the prompt section changes.
  */
+const SparkleIcon = pickSparkleIcon(primitives)
+
 export function PromptToggleButton(_props: PromptToggleButtonProps) {
   const [enabled, setEnabled] = useState(false)
   const [available, setAvailable] = useState(false)
@@ -125,7 +128,7 @@ export function PromptToggleButton(_props: PromptToggleButtonProps) {
         onFocus={showTooltip}
         onBlur={hideTooltip}
       >
-        <IconSparkle16 size={14} />
+        {SparkleIcon ? <SparkleIcon size={14} /> : null}
       </button>
       {tooltipPoint !== null && createPortal(
         <span

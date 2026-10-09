@@ -19,6 +19,71 @@ export interface GenuiPromptSettings {
   enabled: boolean
 }
 
+/** One settings form row, as returned by DSH 0.2 `settings.describe()`. */
+export interface PromptSettingsDescriptor {
+  ns: string
+  value: unknown
+  schema: unknown
+}
+
+/**
+ * Host settings seam. DSH 0.1 exposes `register`; DSH 0.2 exposes `describe` / `update`
+ * and only accepts fields marked volatile on the plugin Config.
+ */
+export interface PromptSettingsHost {
+  register?: (namespace: string, schema: unknown) => GenuiPromptSettingsScope
+  describe?: () => readonly PromptSettingsDescriptor[]
+  update?: (ns: string, patch: { promptEnabled: boolean }) => Promise<void>
+}
+
+const PROMPT_ENTRY_PREFERENCE = ['genui', 'dsh-genui']
+
+/**
+ * Pick the profile entry that owns this plugin's live `promptEnabled` field.
+ * The bundled patch uses `genui`; a hand-written entry may use the package name.
+ * @param descriptors - rows from `settings.describe()`.
+ * @returns The entry id to pass to `settings.update`, when one row is ours.
+ */
+export function findPromptSettingsEntry(descriptors: readonly PromptSettingsDescriptor[]): string | undefined {
+  const matches = descriptors.filter(mentionsPromptEnabled)
+  for (const id of PROMPT_ENTRY_PREFERENCE) {
+    if (matches.some(descriptor => descriptor.ns === id)) return id
+  }
+  return matches.length === 1 ? matches[0]?.ns : undefined
+}
+
+function mentionsPromptEnabled(descriptor: PromptSettingsDescriptor): boolean {
+  const value = descriptor.value
+  if (value !== null && typeof value === 'object' && 'promptEnabled' in value) return true
+  return JSON.stringify(descriptor.schema ?? null).includes('"promptEnabled"')
+}
+
+/**
+ * Open the settings scope for the prompt toggle.
+ * @param settings - host settings service.
+ * @param options.configEnabled - resolved Config value, used when the host has no separate register namespace.
+ * @param options.schema - legacy `settings.register` schema.
+ * @returns A get/update scope, or undefined when this host cannot persist the toggle.
+ */
+export function openPromptSettings(
+  settings: PromptSettingsHost,
+  options: { configEnabled: boolean; schema: unknown },
+): GenuiPromptSettingsScope | undefined {
+  if (typeof settings.register === 'function') {
+    return settings.register('dsh-genui', options.schema)
+  }
+  if (typeof settings.update !== 'function') return undefined
+  const update = settings.update.bind(settings)
+  return {
+    get: () => ({ enabled: options.configEnabled }),
+    update(patch) {
+      const described = typeof settings.describe === 'function' ? settings.describe() : []
+      const ns = findPromptSettingsEntry(described) ?? 'genui'
+      return update(ns, { promptEnabled: patch.enabled })
+    },
+  }
+}
+
 /** The owner-facing settings scope used by the toggle. */
 export interface GenuiPromptSettingsScope {
   get(): GenuiPromptSettings
