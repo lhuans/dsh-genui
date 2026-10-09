@@ -16,6 +16,7 @@ import {
   type GenuiPromptSettings,
   type PromptSettingsHost,
 } from './prompt-control.ts'
+import { adjustAuthoringPrompt } from './authoring-prompt.ts'
 import { GENUI_PROMPT_CONTROL_URL } from './prompt-control-url.ts'
 import {
   GENUI_RUNTIME_MAP_URL,
@@ -70,7 +71,7 @@ export const PromptSettings: z<GenuiPromptSettings> = z.object({
  * @returns The prompt text to register while the composer toggle is enabled.
  */
 function genuiPromptText(): string {
-  return genPrompt('Vue', materialsMeta, {
+  return adjustAuthoringPrompt(genPrompt('Vue', materialsMeta, {
     customActions: [
       {
         name: 'continueChat',
@@ -88,7 +89,7 @@ function genuiPromptText(): string {
         },
       },
     ],
-  })
+  }))
 }
 
 /**
