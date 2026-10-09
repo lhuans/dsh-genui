@@ -1,6 +1,6 @@
 {
   "name": "dsh-genui",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "packageManager": "pnpm@11.21.0",
   "description": "GenUI for DeepSeek Harness: interactive charts, forms, calculators, dashboards, and mini apps rendered inline in assistant replies, with actions that flow back to the model.",
   "license": "MIT",
