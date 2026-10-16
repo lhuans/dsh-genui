@@ -76,13 +76,19 @@ function genuiPromptText(): string {
       {
         name: 'continueChat',
         description:
-          'Continue the conversation (e.g. form submit). Pass a short message only; the host appends the card state (formData, etc.) automatically.',
+          'Continue the conversation on explicit user submission. Pass a short message and optional stateKeys selecting all required top-level state fields. Omitting stateKeys preserves the full-state payload of existing cards.',
         parameters: {
           type: 'object',
           properties: {
             message: {
               type: 'string',
               description: 'Short follow-up text (button label or summary). Do not put form fields here.',
+            },
+            stateKeys: {
+              type: 'array',
+              items: { type: 'string' },
+              maxItems: 64,
+              description: 'Required top-level state keys, e.g. ["formData", "customerId"]. [] sends no state; omission sends full state. Do not include unrelated options, styles or caches.',
             },
           },
           required: ['message'],

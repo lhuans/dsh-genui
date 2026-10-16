@@ -22,4 +22,11 @@ describe('adjustAuthoringPrompt', () => {
     expect(prompt).not.toContain('可以使用Mock数据来完成会话')
     expect(prompt).toContain('标注「示例数据」')
   })
+
+  it('documents explicit state selection and avoids automatic model round-trips', () => {
+    expect(prompt).toContain("stateKeys:['formData']")
+    expect(prompt).toContain('所有必要的 state 顶层字段')
+    expect(prompt).toContain('全量状态')
+    expect(prompt).toContain('本地操作不调用 continueChat')
+  })
 })
