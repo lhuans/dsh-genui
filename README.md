@@ -1,5 +1,11 @@
 # dsh-genui
 
+### Sending only the state a follow-up needs
+
+Cards may use `this.callAction('continueChat', { message: 'Submit', stateKeys: ['formData', 'customerId'] })` to send only the named top-level state fields. Include every field the model needs; omit unrelated option lists, presentation state and caches. An explicit `stateKeys: []` sends only the message and an empty state object. Omitting `stateKeys` preserves existing cards' full-state payload.
+
+Missing/invalid selected keys or JSON serialization failures display an alert without replacing the draft or submitting incomplete data. Selection is limited to 64 non-reserved own-property names of 1–128 characters. Local calculations, filtering and expanding should stay in the card; call `continueChat` only on explicit user submission. This reduces submitted JSON; it does not remove earlier schemas from conversation history or establish a billing saving percentage.
+
 **English** · [简体中文](https://github.com/lhuans/dsh-genui/blob/main/README.zh-CN.md)
 
 > Turn [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) replies from a wall of text into an interface you can actually click.

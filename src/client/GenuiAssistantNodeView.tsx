@@ -3,13 +3,14 @@
  * otherwise; lightweight reasoning / image / unknown fallbacks so shadowing
  * does not drop those block kinds.
  */
-import { Fragment, memo, useMemo } from 'react'
+import { Fragment, memo, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
 import { blockBelongsToGroupPart, type GenuiAssistantNodeViewProps } from './assistant-props.ts'
 import { GenuiTextBody } from './GenuiTextBody.tsx'
 import { markdownLabels } from './markdown-labels.ts'
+import { continueChatDraft } from './continue-chat.ts'
 import css from './genui-assistant.module.css'
 
 /** Priority below the built-in assistant-step (0) so this entry wins. */
@@ -19,6 +20,7 @@ export const ASSISTANT_STEP_PRIORITY = -1
 export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
   node, renderMessageImages, fileMentions, t, useTurnData, openFile, turnProcess, inputActions, groupPart,
 }: GenuiAssistantNodeViewProps) {
+  const [actionError, setActionError] = useState<string | null>(null)
   const data = node.data
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
@@ -45,19 +47,18 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
     continueChat: {
       name: 'continueChat',
       description: 'Continue the chat with a follow-up user message.',
-      // Match GenUI Chat: short button label + card state (formData, …) for the model.
+      // Existing cards send full state; new cards may select the required fields.
       execute: (params, context) => {
-        const message = typeof params === 'object' && params !== null && 'message' in params
-          ? String((params as { message: unknown }).message)
-          : ''
-        if (message.trim().length === 0 || inputActions === undefined) return
-        let stateJson = '{}'
+        if (inputActions === undefined) return
+        let draft: string | null
         try {
-          stateJson = JSON.stringify(context?.state ?? {})
-        } catch {
-          stateJson = '{}'
+          draft = continueChatDraft(params, context)
+        } catch (error) {
+          setActionError(error instanceof Error ? error.message : 'GenUI：提交失败；未发送。')
+          return
         }
-        const draft = `${message},相关参数为：${stateJson}`
+        if (draft === null) return
+        setActionError(null)
         inputActions.setDraft(draft)
         inputActions.submit()
       },
@@ -142,6 +143,7 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
   return (
     <div className={css.root} data-streaming={streaming || undefined} data-dsh-genui-assistant="">
       <div className={css.body}>
+        {actionError === null ? null : <p role="alert" data-genui-submit-error="">{actionError}</p>}
         {rendered}
         {showStopped ? <span className={css.stopped}>{t('message.stopped')}</span> : null}
       </div>

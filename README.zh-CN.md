@@ -1,5 +1,11 @@
 # dsh-genui
 
+### 继续对话时只提交必要状态
+
+卡片可使用 `this.callAction('continueChat', { message: '提交', stateKeys: ['formData', 'customerId'] })`，只发送指定的 state 顶层字段。应列出模型所需的全部字段，省去无关选项全集、展示状态和缓存。显式传入 `stateKeys: []` 时只发消息和空状态对象；省略 `stateKeys` 时保留旧卡片全量发送的行为。
+
+字段不存在、字段名非法或 JSON 序列化失败时会显示错误提示，不替换输入草稿、不提交残缺数据。最多选择 64 个非保留的自有字段名，每个字段名 1–128 字符。计算、筛选和展开在卡片本地完成，仅在用户明确提交时调用 `continueChat`。这能减少提交 JSON 的体积，不会清除历史中的旧 schema，也不能直接推算账单节省比例。
+
 [English](https://github.com/lhuans/dsh-genui/blob/main/README.md) · **简体中文**
 
 > 让 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的回答，从「一段文字」变成「一个能点的界面」。

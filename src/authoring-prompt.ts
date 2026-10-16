@@ -41,4 +41,5 @@ export function adjustAuthoringPrompt(prompt: string): string {
     .replace(COMPONENT_LINE, COMPONENT_REPLACEMENT)
     .replace(MOCK_LINE, MOCK_REPLACEMENT)
     .replace(PRIORITY_LINES, PRIORITY_REPLACEMENT)
+    + '\n\n继续对话时，使用 this.callAction(\'continueChat\', {message:\'提交\', stateKeys:[\'formData\']})，将本次所有必要的 state 顶层字段一起列出；[] 表示只发消息。省略 stateKeys 保留旧卡片的全量状态行为。不要在 message 中重复拼接字段，也不要提交不相关的选项全集、样式或缓存。计算、筛选和展开等本地操作不调用 continueChat；仅在用户明确提交时继续会话，不在挂载、每次输入或刷新时调用。'
 }
