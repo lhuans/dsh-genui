@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
 import { blockBelongsToGroupPart, type GenuiAssistantNodeViewProps } from './assistant-props.ts'
+import { continueChatDraft } from './continue-chat.ts'
 import { GenuiTextBody } from './GenuiTextBody.tsx'
 import { markdownLabels } from './markdown-labels.ts'
 import css from './genui-assistant.module.css'
@@ -48,16 +49,13 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
       // Match GenUI Chat: short button label + card state (formData, …) for the model.
       execute: (params, context) => {
         const message = typeof params === 'object' && params !== null && 'message' in params
-          ? String((params as { message: unknown }).message)
+          ? (params as { message: unknown }).message
           : ''
-        if (message.trim().length === 0 || inputActions === undefined) return
-        let stateJson = '{}'
-        try {
-          stateJson = JSON.stringify(context?.state ?? {})
-        } catch {
-          stateJson = '{}'
-        }
-        const draft = `${message},相关参数为：${stateJson}`
+        if (inputActions === undefined) return
+        // Card state is model-authored and unbounded; one click must not push
+        // an arbitrary payload into the next turn.
+        const draft = continueChatDraft(message, context?.state)
+        if (draft.length === 0) return
         inputActions.setDraft(draft)
         inputActions.submit()
       },

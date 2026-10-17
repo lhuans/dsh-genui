@@ -155,6 +155,10 @@ DSH 在启动时就锁定了当前的插件集合，所以**装完插件不重�
 3. 浏览器刷新一下页面
 4. **开一个新会话**
 
+### 升级到本版本
+
+卡片不再执行 `lifeCycles` 挂载钩子：渲染器在挂载时会自己运行它，所以插件在渲染前把它删掉（[原因](./SECURITY.md)）。原先靠 `onMounted` 初始化数据的卡片，渲染出来就是没初始化的样子——把值直接写进 `state` 即可。
+
 ### GenUI 提示词
 
 GenUI 授权提示词默认开启，并且会记住你上一次的选择：DSH 重启后保持关闭或开启。想临时关闭时，点击输入框工具行里的星形按钮即可；它只控制发给模型的提示词，卡片渲染能力始终保留。
@@ -195,6 +199,14 @@ dsh plugin --profile web remove dsh-genui
 
 DSH 管理插件依赖 pnpm。执行 `corepack enable`（或 `npm i -g pnpm`）之后，**新开一个终端**再试，因为 PATH 在旧终端里不会更新。
 
+**卡片该做的事没做？**
+
+渲染器会编译 schema 里携带的 JavaScript，所以 dsh-genui 在渲染前丢掉了 `lifeCycles` 钩子（`onMounted` / `onUnmounted`）：那是渲染器挂载时会自己运行的钩子，卡片不该仅凭出现就做事。属性表达式是另一回事——它们在挂载期间照样执行。如果你确实需要挂载钩子，或者想弄清"从不可信来源粘来的卡片"到底能做什么，见 [SECURITY.md](./SECURITY.md)。
+
+**提交表单后有多少内容会回到对话里？**
+
+按钮文字加上卡片状态，上限 4000 字符。超出部分会被截断，并在消息里写明截断了多少，模型因此知道数据不完整，而不是悄悄收到一半。
+
 **AI 不主动用界面回答？**
 
 如果星形开关是关闭的，模型不会收到 GenUI 提示词。重新打开开关，再说一句「用界面/表单/图表的方式给我」就行。
@@ -217,7 +229,11 @@ DSH 管理插件依赖 pnpm。执行 `corepack enable`（或 `npm i -g pnpm`）�
 
 组件本身来自 [OpenTiny GenUI SDK](https://opentiny.design/genui-sdk) 和 OpenTiny Vue 组件库——这是 OpenTiny 团队做的生成式 UI 方案，一整套「让大模型输出界面」的规范和渲染引擎。dsh-genui 做的事情，是把它接到了 DSH 的对话流里。
 
-顺带说一句安全：模型能用的组件是白名单里的那些，它塞不进 HTML 或脚本，所以不用担心对话里跑出奇怪的东西。
+关于安全，有两件事要说清，第二件比第一件更重要。
+
+组件走 OpenTiny 物料白名单，HTML 兜底路径也被管制：`script`、`iframe`、`object`、`embed` 等标签，以及 `javascript:` 链接，都会在渲染前被拒掉。
+
+但卡片本身就是代码，而且它在你看到的那一刻就已经开始运行。渲染器会把模型写的 `JSExpression` / `JSFunction` 编译成在 DSH 页面里真实运行的 JavaScript——表单能提交靠的是它，`props`、`state`、`methods`、`refs`、`condition`、`loop` 里的表达式同样会在卡片出现的瞬间执行、不需要你点任何东西，也是它。dsh-genui 会在渲染前移除 `lifeCycles` 钩子（`onMounted` / `onUnmounted`），堵掉了渲染器唯一会自己运行的那个钩子，但这不等于卡片是惰性的。[SECURITY.md](./SECURITY.md) 写了完整信任模型、实测证据，以及仍未关闭的那条路。
 
 ---
 

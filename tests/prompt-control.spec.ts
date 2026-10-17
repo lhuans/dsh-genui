@@ -5,6 +5,7 @@ import {
   createGenuiPromptControlHandler,
   createPersistedPromptControl,
   findPromptSettingsEntry,
+  isTrustedPromptRequest,
   openPromptSettings,
 } from '../src/prompt-control.ts'
 
@@ -32,10 +33,15 @@ function mockRes(): ServerResponse & {
   return rec as unknown as ServerResponse & typeof rec
 }
 
-function mockReq(method: string, chunks: readonly string[] = []): IncomingMessage {
+function mockReq(
+  method: string,
+  chunks: readonly string[] = [],
+  headers: Record<string, string> = {},
+): IncomingMessage {
   const buffers = chunks.map((chunk) => Buffer.from(chunk))
   return {
     method,
+    headers,
     async *[Symbol.asyncIterator]() {
       yield* buffers
     },
@@ -183,6 +189,106 @@ describe('createGenuiPromptControlHandler', () => {
     await handler(mockReq('POST', [JSON.stringify({})]), missingEnabled)
     expect(missingEnabled.statusCodeOut).toBe(400)
     expect(control.isEnabled()).toBe(false)
+  })
+
+  it('refuses a cross-site toggle and leaves the control alone', async () => {
+    const control = createGenuiPromptControl(section, {
+      section: () => () => {},
+    })
+    const handler = createGenuiPromptControlHandler(control)
+
+    const foreign = mockRes()
+    await handler(
+      mockReq('POST', [JSON.stringify({ enabled: true })], {
+        origin: 'https://evil.example',
+        host: '127.0.0.1:3080',
+      }),
+      foreign,
+    )
+    expect(foreign.statusCodeOut).toBe(403)
+    expect(parseBody(foreign)).toEqual({ error: 'cross-origin' })
+    expect(control.isEnabled()).toBe(false)
+
+    // A cross-site read is refused the same way a cross-site write is.
+    const foreignRead = mockRes()
+    await handler(mockReq('GET', [], { origin: 'https://evil.example', host: '127.0.0.1:3080' }), foreignRead)
+    expect(foreignRead.statusCodeOut).toBe(403)
+
+    // The browser's own fetch from the DSH page still works.
+    const own = mockRes()
+    await handler(
+      mockReq('POST', [JSON.stringify({ enabled: true })], {
+        origin: 'http://127.0.0.1:3080',
+        host: '127.0.0.1:3080',
+        'sec-fetch-site': 'same-origin',
+      }),
+      own,
+    )
+    expect(own.statusCodeOut).toBe(200)
+    expect(control.isEnabled()).toBe(true)
+  })
+})
+
+describe('isTrustedPromptRequest', () => {
+  it('refuses a rebound authority even when its own label looks same-origin', () => {
+  // Measured before the loopback rule: a page served from a rebound hostname is
+  // same-origin with itself, so its Sec-Fetch-Site and its Origin/Host comparison
+  // both passed. The authority is what gives it away — this endpoint is loopback-only.
+  expect(isTrustedPromptRequest({ headers: { origin: 'http://evil', host: 'evil' } })).toBe(false)
+  expect(isTrustedPromptRequest({ headers: { 'sec-fetch-site': 'same-origin', host: 'evil' } })).toBe(false)
+  expect(isTrustedPromptRequest({ headers: { origin: 'http://evil', host: 'evil:3080' } })).toBe(false)
+  // Clients that send no headers (curl) name the real loopback host and keep working.
+  expect(isTrustedPromptRequest({ headers: { host: '127.0.0.1:3080' } })).toBe(true)
+  expect(isTrustedPromptRequest({ headers: { host: 'localhost:3080' } })).toBe(true)
+})
+
+it('accepts the composer button talking to its own host', () => {
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://127.0.0.1:3080', host: '127.0.0.1:3080' },
+    })).toBe(true)
+  })
+
+  it('rejects a foreign origin, a cross-site fetch, and an opaque origin', () => {
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'https://evil.example', host: '127.0.0.1:3080' },
+    })).toBe(false)
+    expect(isTrustedPromptRequest({
+      headers: { 'sec-fetch-site': 'cross-site', host: '127.0.0.1:3080' },
+    })).toBe(false)
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'null', host: '127.0.0.1:3080' },
+    })).toBe(false)
+  })
+
+  it('accepts a same-origin request that carries no browser label', () => {
+    // No Sec-Fetch-Site at all: the Origin/Host comparison is the only rule in
+    // play, so a broken comparison cannot hide behind the label.
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://127.0.0.1:3080', host: '127.0.0.1:3080' },
+    })).toBe(true)
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://127.0.0.1:9999', host: '127.0.0.1:3080' },
+    })).toBe(false)
+  })
+
+  it('refuses a rebound host, which matches its own Host header', () => {
+    // evil.test resolves to the loopback address: Origin and Host agree, so only
+    // the browser's own label distinguishes the request from the real button.
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://evil.test', host: 'evil.test', 'sec-fetch-site': 'cross-site' },
+    })).toBe(false)
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://evil.test', host: 'evil.test', 'sec-fetch-site': 'same-site' },
+    })).toBe(false)
+    // The composer's own call carries same-origin and keeps working.
+    expect(isTrustedPromptRequest({
+      headers: { origin: 'http://127.0.0.1:3080', host: '127.0.0.1:3080', 'sec-fetch-site': 'same-origin' },
+    })).toBe(true)
+  })
+
+  it('keeps header-less clients working, but not when the host is unknowable', () => {
+    expect(isTrustedPromptRequest({ headers: {} })).toBe(true)
+    expect(isTrustedPromptRequest({ headers: { origin: 'http://127.0.0.1:3080' } })).toBe(false)
   })
 })
 

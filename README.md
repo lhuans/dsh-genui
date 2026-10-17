@@ -155,6 +155,13 @@ DSH locks in its plugin set at startup, so **nothing changes in the UI until you
 3. Refresh the browser
 4. **Start a new conversation**
 
+### Upgrading to this version
+
+Cards no longer run `lifeCycles` mount hooks: the renderer executes them by
+itself while mounting, so they are removed before rendering
+([why](./SECURITY.md)). A card that used `onMounted` to seed its state will
+render without that initialization — put the values in `state` instead.
+
 ### GenUI authoring prompt
 
 GenUI authoring starts on by default and remembers your last choice across DSH restarts. Use the sparkle button in the composer tool row if you want to turn the authoring guidance off. Card rendering stays installed either way.
@@ -204,6 +211,14 @@ Both are rendered identically if the model uses either one. If you see *neither*
 
 DSH needs pnpm to manage plugins. Run `corepack enable` (or `npm i -g pnpm`), then **open a new terminal** — PATH won't update in the old one.
 
+**A card lost the behavior it was supposed to run?**
+
+The renderer compiles the JavaScript a schema carries, so dsh-genui drops the `lifeCycles` hooks (`onMounted` / `onUnmounted`) before rendering: the renderer runs that hook by itself while mounting, and a card should not be able to do anything just by appearing. Property expressions are a different story — they still execute during mount. If a card you rely on needs a mount hook, or you want the full picture before pasting a card from somewhere untrusted, see [SECURITY.md](./SECURITY.md).
+
+**How much of a form comes back when I submit?**
+
+The button label plus the card's state, capped at 4000 characters. A longer state is truncated and the truncation is spelled out in the message, so the model knows data is missing instead of quietly receiving half of it.
+
 **The AI doesn't use interfaces on its own?**
 
 If the sparkle toggle is off, the model has no GenUI authoring guidance. Turn it back on, then say something like "give me a form / chart / interface."
@@ -226,7 +241,11 @@ A bit more detail: the plugin adds a prompt section teaching the model to emit s
 
 The components come from [OpenTiny GenUI SDK](https://opentiny.design/genui-sdk) and the OpenTiny Vue library — OpenTiny's generative-UI stack, a spec plus rendering engine for letting LLMs produce interfaces. dsh-genui wires that into the DSH conversation flow.
 
-On safety: the model can only use whitelisted components. It cannot inject HTML or scripts, so nothing strange ends up in your conversation.
+On safety, two things are true, and the second one matters more than the first.
+
+Rendering goes through the OpenTiny material set, and the HTML fallback is policed: `script`, `iframe`, `object`, `embed` and friends, plus `javascript:` URLs, are refused before a card renders.
+
+But a card *is* code, and it starts running while it renders. The renderer compiles the `JSExpression` / `JSFunction` values the model writes into real JavaScript in the DSH page — that is how a submitting form works, and it is also why expressions in `props`, `state`, `methods`, `refs`, `condition` and `loop` all evaluate as the card appears, no click needed. dsh-genui removes the `lifeCycles` hooks (`onMounted` / `onUnmounted`) before rendering, which closes the one hook the renderer runs on its own, but it does not make a card inert. [SECURITY.md](./SECURITY.md) documents the trust model, the measurements, and the gap that is still open.
 
 ---
 

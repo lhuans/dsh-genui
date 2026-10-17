@@ -53,6 +53,7 @@
   "scripts": {
     "build": "tsdown",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm build && pnpm test",
     "website:dev": "pnpm --filter dsh-genui-website dev",
     "website:build": "pnpm sync:website-assets && pnpm --filter dsh-genui-website build",
@@ -85,6 +86,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-ui-primitives": "0.0.1-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
+    "@types/node": "^24.0.0",
     "@opentiny/genui-sdk-core": "1.3.0",
     "@opentiny/genui-sdk-materials-vue-opentiny-vue": "1.3.0",
     "@opentiny/genui-sdk-vue": "1.3.0",

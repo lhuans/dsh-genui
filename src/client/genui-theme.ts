@@ -1,4 +1,5 @@
 import { RepairJsonState, repairJson } from '@opentiny/genui-sdk-core'
+import { stripLifecycleScripts, type SchemaGuardOptions } from './schema-guard.ts'
 
 /** DSH dark-mode marker on `<body>`. */
 export const DARK_ATTR = 'data-ds-dark-theme'
@@ -42,28 +43,69 @@ export function applyChartTheme(value: unknown, dark: boolean): unknown {
   return walk(value)
 }
 
+/** What the card element hands to the renderer, plus the policy's own report. */
+export interface ThemedCardContent {
+  readonly content: string | Record<string, unknown>
+  readonly isJsonComplete: boolean
+  /** Lifecycle hooks dropped by the schema guard (see `schema-guard.ts`). */
+  readonly lifecycleScriptsRemoved: number
+  /** Executable HTML tags the schema guard refused. */
+  readonly blockedTags: readonly string[]
+  /** URL attributes refused for carrying a script URL. */
+  readonly blockedUrls: number
+  /** Event-handler attributes refused because they run code. */
+  readonly blockedHandlers: number
+}
+
+/** Theme a repaired schema and apply the content policy. */
+function prepareCardContent(
+  schema: Record<string, unknown>,
+  dark: boolean,
+  isJsonComplete: boolean,
+  options: SchemaGuardOptions,
+): ThemedCardContent {
+  const guarded = stripLifecycleScripts(applyChartTheme(schema, dark), options)
+  return {
+    content: guarded.value as Record<string, unknown>,
+    isJsonComplete,
+    lifecycleScriptsRemoved: guarded.removed,
+    blockedTags: guarded.blockedTags,
+    blockedUrls: guarded.blockedUrls,
+    blockedHandlers: guarded.blockedHandlers,
+  }
+}
+
 /**
  * Parse with the SDK's stream repairer so charts can receive a themed schema
  * before the final chunk. If repair cannot produce an object, hand the
  * original string back to GenuiRenderer and let it show its normal error.
+ * @param content - card payload, still streaming or final.
+ * @param dark - resolved DSH theme.
+ * @param isJsonComplete - whether the model finished the schema.
+ * @param options - content-policy overrides.
  */
 export function parseThemedContent(
   content: string | Record<string, unknown>,
   dark: boolean,
   isJsonComplete = true,
-): { content: string | Record<string, unknown>; isJsonComplete: boolean } {
+  options: SchemaGuardOptions = {},
+): ThemedCardContent {
   if (typeof content !== 'string') {
-    return { content: applyChartTheme(content, dark) as Record<string, unknown>, isJsonComplete }
+    return prepareCardContent(content, dark, isJsonComplete, options)
   }
-  if (!content.trim()) return { content: {}, isJsonComplete: true }
+  if (!content.trim()) {
+    return { content: {}, isJsonComplete: true, lifecycleScriptsRemoved: 0, blockedTags: [], blockedUrls: 0, blockedHandlers: 0 }
+  }
 
   const repaired = repairJson(content)
   if (!repaired.value || typeof repaired.value !== 'object') {
-    return { content, isJsonComplete }
+    return { content, isJsonComplete, lifecycleScriptsRemoved: 0, blockedTags: [], blockedUrls: 0, blockedHandlers: 0 }
   }
 
-  return {
-    content: applyChartTheme(repaired.value, dark) as Record<string, unknown>,
-    isJsonComplete: repaired.state === RepairJsonState.SUCCESS,
-  }
+  return prepareCardContent(
+    repaired.value as Record<string, unknown>,
+    dark,
+    repaired.state === RepairJsonState.SUCCESS,
+    options,
+  )
 }

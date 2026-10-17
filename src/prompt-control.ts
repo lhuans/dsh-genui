@@ -143,6 +143,53 @@ export function createGenuiPromptControl(
 }
 
 /**
+ * Authorities this control is served on: loopback addresses and `localhost`
+ * spellings. The composer talks to the plugin's own local server, so a Host
+ * naming anything else is not this page — it is a rebound or remote name, and a
+ * rebinding page's Host comparison passes by construction.
+ */
+const LOOPBACK_AUTHORITY = /^(?:localhost|\[::1\]|127(?:\.\d{1,3}){3}|\[::ffff:127(?:\.\d{1,3}){3}\])(?::\d+)?$/i
+
+function isLoopbackAuthority(host: string): boolean {
+  return LOOPBACK_AUTHORITY.test(host.trim())
+}
+/**
+ * Whether a request came from the DSH page itself.
+ *
+ * The route carries no CSRF token, so it leans on the browser's own request
+ * metadata instead: a cross-site `fetch` is labelled `Sec-Fetch-Site:
+ * cross-site` and carries a foreign `Origin`, while the composer button talks
+ * to its own host. Clients that send neither header (curl, a maintainer script)
+ * keep working — they already run with the user's authority on the host.
+ * @param req - incoming request; only the headers are read.
+ * @returns true when the request may change toggle state.
+ */
+export function isTrustedPromptRequest(req: Pick<IncomingMessage, 'headers'>): boolean {
+  const headers = req.headers ?? {}
+  const site = headers['sec-fetch-site']
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return false
+
+  // A named authority that is not this server's loopback address can never be this
+  // server speaking to its own page: a rebound hostname resolves to the loopback
+  // address while naming itself, so its Origin/Host comparison passes by construction
+  // (measured before this rule existed). An unknowable host keeps the old behaviour.
+  const host = headers.host
+  if (typeof host === 'string' && host.length > 0 && !isLoopbackAuthority(host)) return false
+
+  const origin = headers.origin
+  // A same-origin GET carries no Origin; a browser POST always does. Header-less
+  // clients (curl, maintainer scripts) keep working: they carry no page, so the
+  // rebinding trick is not available to them.
+  if (typeof origin !== 'string' || origin.length === 0) return true
+  try {
+    // Opaque origins ('null' from a sandboxed frame or a data: URL) do not parse.
+    return new URL(origin).host === host
+  } catch {
+    return false
+  }
+}
+
+/**
  * Handle GET (read state) and POST `{ enabled: boolean }` (set state).
  * This is deliberately tiny and same-origin only; the button owns the UI state.
  * @param control - host prompt toggle.
@@ -151,6 +198,12 @@ export function createGenuiPromptControlHandler(
   control: Pick<GenuiPromptControl, 'isEnabled' | 'set'> & { persisted?: () => boolean },
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
+    // Reads are covered too: a rebound hostname could otherwise read the state
+    // it cannot write (the composer's own GET carries no Origin and passes).
+    if (!isTrustedPromptRequest(req)) {
+      respond(res, 403, { error: 'cross-origin' })
+      return
+    }
     if (req.method === 'GET') {
       respond(res, 200, {
         enabled: control.isEnabled(),
@@ -175,6 +228,10 @@ export function createGenuiPromptControlHandler(
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 async function readJsonObject(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
   let total = 0
@@ -186,9 +243,7 @@ async function readJsonObject(req: IncomingMessage): Promise<Record<string, unkn
   }
   if (chunks.length === 0) return {}
   const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('body-must-be-object')
-  }
+  if (!isRecord(parsed)) throw new Error('body-must-be-object')
   return parsed
 }
 
