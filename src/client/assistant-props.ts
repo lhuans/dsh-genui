@@ -4,6 +4,7 @@
  */
 import type { ReactNode } from 'react'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ReasoningBodyOwner } from './reasoning-body.ts'
 
 /** Minimal assistant content block kinds this view understands. */
 export type AssistantBlock =
@@ -96,4 +97,9 @@ export interface GenuiAssistantNodeViewProps {
    * `reasoning` keeps only reasoning blocks; `response` keeps everything else.
    */
   readonly groupPart?: string | undefined
+  /**
+   * Present once the shadow entry borrows `conversation.chat.reasoning.body`.
+   * Official reasoning translation registers in that slot.
+   */
+  readonly renderSlot?: ((key: string, owner: ReasoningBodyOwner) => ReactNode) | undefined
 }
