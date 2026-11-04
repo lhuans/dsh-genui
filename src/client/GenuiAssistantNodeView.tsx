@@ -1,23 +1,43 @@
 /**
- * Shadowed assistant-step renderer: GenUI cards for ```schemaJson, markdown
- * otherwise; lightweight reasoning / image / unknown fallbacks so shadowing
- * does not drop those block kinds.
+ * Shadowed assistant-step renderer for the reply bubble. Thinking stays on
+ * the built-in assistant view: Chat mounts that node once for reasoning and
+ * once for the reply, and both mounts share this winning entry.
  */
-import { Fragment, memo, useMemo } from 'react'
-import type { ReactNode } from 'react'
+import { Component, Fragment, memo, useMemo, useState } from 'react'
+import type { ErrorInfo, ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
 import { blockBelongsToGroupPart, type GenuiAssistantNodeViewProps } from './assistant-props.ts'
+import {
+  bindPresentation, useBuiltinAssistant, type BuiltinAssistant,
+} from './builtin-assistant.ts'
 import { GenuiTextBody } from './GenuiTextBody.tsx'
-import { markdownLabels } from './markdown-labels.ts'
+import { markdownLabels, type GenuiMarkdownLabels } from './markdown-labels.ts'
+import { REASONING_BODY_SLOT } from './reasoning-body.ts'
 import css from './genui-assistant.module.css'
 
 /** Priority below the built-in assistant-step (0) so this entry wins. */
 export const ASSISTANT_STEP_PRIORITY = -1
 
-/** Keyed Chat Node view that replaces the stock assistant bubble. */
-export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
-  node, renderMessageImages, fileMentions, t, useTurnData, openFile, turnProcess, inputActions, groupPart,
+/** Keyed Chat Node view. Reasoning mounts render the built-in assistant view. */
+export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView(
+  props: GenuiAssistantNodeViewProps,
+) {
+  const official = props.groupPart !== 'response'
+    ? <OfficialReasoning {...props} />
+    : null
+  if (props.groupPart === 'reasoning') return official
+  return (
+    <>
+      {official}
+      <AssistantReply {...props} />
+    </>
+  )
+})
+
+/** Reply half: schemaJson cards and markdown. Reasoning blocks are omitted. */
+const AssistantReply = memo(function AssistantReply({
+  node, renderMessageImages, fileMentions, t, useTurnData, openFile, inputActions, groupPart,
 }: GenuiAssistantNodeViewProps) {
   const data = node.data
   const streaming = data.status === 'running'
@@ -36,11 +56,6 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
     [fileMentions, owner],
   )
   const labels = useMemo(() => markdownLabels(t), [t])
-  const reasoningHidden = turnProcess !== undefined
-    && turnProcess.foldable
-    && turnProcess.spec.answerStep === data.step
-    && turnProcess.spec.inlineReasoning
-    && !turnProcess.open
   const customActions = useMemo<Record<string, ICustomAction>>(() => ({
     continueChat: {
       name: 'continueChat',
@@ -66,7 +81,6 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
 
   const blocks = data.blocks
   const rendered: ReactNode[] = []
-  const last = blocks.length - 1
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
     if (block === undefined) continue
@@ -86,17 +100,6 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
         )
         break
       case 'reasoning':
-        if (reasoningHidden) break
-        rendered.push(
-          <details key={i} className={css.think} open={streaming && i === last}>
-            <summary>{t('message.think')}</summary>
-            <MarkdownText
-              text={block.text}
-              streaming={streaming && i === last}
-              labels={labels}
-            />
-          </details>,
-        )
         break
       case 'image': {
         const start = i
@@ -148,3 +151,122 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView({
     </div>
   )
 })
+
+/**
+ * Built-in thinking row. A failure stays inside this boundary so the reply
+ * bubble keeps its shadow entry.
+ */
+function OfficialReasoning(props: GenuiAssistantNodeViewProps) {
+  const fallback = <ReasoningBlocks {...props} />
+  return (
+    <OfficialReasoningBoundary fallback={fallback}>
+      <OfficialReasoningBody {...props} />
+    </OfficialReasoningBoundary>
+  )
+}
+
+function OfficialReasoningBody(props: GenuiAssistantNodeViewProps) {
+  const builtin = useBuiltinAssistant()
+  const sessionId = (props as { sessionId?: unknown }).sessionId
+  const injected = useMemo(() => {
+    if (builtin?.inject === undefined) return undefined
+    try {
+      return builtin.inject(sessionId)
+    } catch {
+      return undefined
+    }
+  }, [builtin, sessionId])
+  const presentation = injected?.hooks?.presentation
+  const usePresentation = useMemo(
+    () => (presentation === undefined ? undefined : bindPresentation(presentation)),
+    [presentation],
+  )
+  if (builtin === undefined) return <ReasoningBlocks {...props} />
+  const officialProps: Record<string, unknown> = {
+    ...props,
+    groupPart: 'reasoning',
+    ...(usePresentation === undefined ? {} : { usePresentation }),
+    ...(injected?.resolveFilePath === undefined ? {} : { resolveFilePath: injected.resolveFilePath }),
+    ...(injected?.fileMentions === undefined ? {} : { fileMentions: injected.fileMentions }),
+  }
+  return createOfficialElement(builtin, officialProps)
+}
+
+/** Visible thinking text when the built-in view cannot be mounted. */
+function ReasoningBlocks({ node, t, renderSlot }: GenuiAssistantNodeViewProps) {
+  const labels = useMemo(() => markdownLabels(t), [t])
+  const streaming = node.data.status === 'running'
+  const blocks = node.data.blocks
+  const last = blocks.length - 1
+  const rows: ReactNode[] = []
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]
+    if (block === undefined || block.kind !== 'reasoning' || typeof block.text !== 'string') continue
+    if (block.text.trim() === '') continue
+    rows.push(
+      <ReasoningDisclosure
+        key={i}
+        text={block.text}
+        running={streaming && i === last}
+        title={t('message.think')}
+        labels={labels}
+        renderSlot={renderSlot}
+      />,
+    )
+  }
+  if (rows.length === 0) return null
+  return <>{rows}</>
+}
+
+function ReasoningDisclosure({
+  text, running, title, labels, renderSlot,
+}: {
+  text: string
+  running: boolean
+  title: string
+  labels: GenuiMarkdownLabels
+  renderSlot: GenuiAssistantNodeViewProps['renderSlot']
+}) {
+  const [opened, setOpened] = useState(running)
+  const shown = running || opened
+  const body = renderSlot === undefined
+    ? <MarkdownText text={text} streaming={running} labels={labels} />
+    : renderSlot(REASONING_BODY_SLOT, { rawText: text, text, running })
+  return (
+    <details
+      className={css.think}
+      open={shown}
+      onToggle={(event) => {
+        if (running) return
+        setOpened(event.currentTarget.open)
+      }}
+    >
+      <summary>{title}</summary>
+      {shown ? body : null}
+    </details>
+  )
+}
+
+function createOfficialElement(builtin: BuiltinAssistant, props: Record<string, unknown>): ReactNode {
+  const Official = builtin.component
+  return <Official {...props} />
+}
+
+class OfficialReasoningBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  override componentDidCatch(_error: unknown, _info: ErrorInfo): void {
+    this.setState({ failed: true })
+  }
+
+  override render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
+}
