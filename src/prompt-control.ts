@@ -1,22 +1,35 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import {
+  isGenuiPromptMode,
+  resolvePromptMode,
+  type GenuiActivePromptMode,
+  type GenuiPromptMode,
+} from './prompt-mode.ts'
 
-/** The minimal system-prompt registry face used by the toggle. */
+/** The minimal system-prompt registry face used by the composer control. */
 export interface GenuiSystemPrompt {
   section(section: { name: string; order: number; text: string }): () => void
 }
 
 /** Registers and disposes one prompt section without leaking it on unload. */
 export interface GenuiPromptControl {
-  /** Whether the section is currently in the prompt registry. */
+  /** Active tier. `off` means the section is not in the registry. */
+  mode(): GenuiPromptMode
+  /** Whether a prompt section is currently registered. */
   isEnabled(): boolean
-  /** Set the desired state and return the resulting state. */
-  set(enabled: boolean): boolean
+  /** Set the desired tier and return the resulting tier. */
+  set(mode: GenuiPromptMode): GenuiPromptMode
 }
 
-/** The persisted slice of prompt-toggle state in DSH settings. */
+/** The persisted slice of prompt-mode state in DSH settings. */
 export interface GenuiPromptSettings {
-  /** Whether the authoring prompt section is active. */
-  enabled: boolean
+  /** Selected tier, once the dropdown has been used or a new config is stored. */
+  mode?: GenuiPromptMode
+  /**
+   * Legacy on/off toggle. `false` means off when `mode` is absent.
+   * New writes set this to `mode !== 'off'` so older hosts still find the field.
+   */
+  enabled?: boolean
 }
 
 /** One settings form row, as returned by DSH 0.2 `settings.describe()`. */
@@ -26,6 +39,12 @@ export interface PromptSettingsDescriptor {
   schema: unknown
 }
 
+/** Fields written into the plugin Config on DSH 0.2. */
+export interface PromptConfigPatch {
+  promptMode: GenuiPromptMode
+  promptEnabled: boolean
+}
+
 /**
  * Host settings seam. DSH 0.1 exposes `register`; DSH 0.2 exposes `describe` / `update`
  * and only accepts fields marked volatile on the plugin Config.
@@ -33,41 +52,45 @@ export interface PromptSettingsDescriptor {
 export interface PromptSettingsHost {
   register?: (namespace: string, schema: unknown) => GenuiPromptSettingsScope
   describe?: () => readonly PromptSettingsDescriptor[]
-  update?: (ns: string, patch: { promptEnabled: boolean }) => Promise<void>
+  update?: (ns: string, patch: PromptConfigPatch) => Promise<void>
 }
 
 const PROMPT_ENTRY_PREFERENCE = ['genui', 'dsh-genui']
 
 /**
- * Pick the profile entry that owns this plugin's live `promptEnabled` field.
+ * Pick the profile entry that owns this plugin's live prompt fields.
  * The bundled patch uses `genui`; a hand-written entry may use the package name.
  * @param descriptors - rows from `settings.describe()`.
  * @returns The entry id to pass to `settings.update`, when one row is ours.
  */
 export function findPromptSettingsEntry(descriptors: readonly PromptSettingsDescriptor[]): string | undefined {
-  const matches = descriptors.filter(mentionsPromptEnabled)
+  const matches = descriptors.filter(mentionsPromptSettings)
   for (const id of PROMPT_ENTRY_PREFERENCE) {
     if (matches.some(descriptor => descriptor.ns === id)) return id
   }
   return matches.length === 1 ? matches[0]?.ns : undefined
 }
 
-function mentionsPromptEnabled(descriptor: PromptSettingsDescriptor): boolean {
+function mentionsPromptSettings(descriptor: PromptSettingsDescriptor): boolean {
   const value = descriptor.value
-  if (value !== null && typeof value === 'object' && 'promptEnabled' in value) return true
-  return JSON.stringify(descriptor.schema ?? null).includes('"promptEnabled"')
+  if (value !== null && typeof value === 'object') {
+    if ('promptEnabled' in value || 'promptMode' in value) return true
+  }
+  const schema = JSON.stringify(descriptor.schema ?? null)
+  return schema.includes('"promptEnabled"') || schema.includes('"promptMode"')
 }
 
 /**
- * Open the settings scope for the prompt toggle.
+ * Open the settings scope for the prompt mode.
  * @param settings - host settings service.
- * @param options.configEnabled - resolved Config value, used when the host has no separate register namespace.
+ * @param options.configMode - resolved Config `promptMode`, when one was stored.
+ * @param options.configEnabled - resolved Config `promptEnabled`.
  * @param options.schema - legacy `settings.register` schema.
- * @returns A get/update scope, or undefined when this host cannot persist the toggle.
+ * @returns A get/update scope, or undefined when this host cannot persist the choice.
  */
 export function openPromptSettings(
   settings: PromptSettingsHost,
-  options: { configEnabled: boolean; schema: unknown },
+  options: { configMode?: unknown; configEnabled: boolean; schema: unknown },
 ): GenuiPromptSettingsScope | undefined {
   if (typeof settings.register === 'function') {
     return settings.register('dsh-genui', options.schema)
@@ -75,85 +98,102 @@ export function openPromptSettings(
   if (typeof settings.update !== 'function') return undefined
   const update = settings.update.bind(settings)
   return {
-    get: () => ({ enabled: options.configEnabled }),
+    get: () => ({
+      mode: isGenuiPromptMode(options.configMode) ? options.configMode : undefined,
+      enabled: options.configEnabled,
+    }),
     update(patch) {
       const described = typeof settings.describe === 'function' ? settings.describe() : []
       const ns = findPromptSettingsEntry(described) ?? 'genui'
-      return update(ns, { promptEnabled: patch.enabled })
+      return update(ns, {
+        promptMode: patch.mode,
+        promptEnabled: patch.mode !== 'off',
+      })
     },
   }
 }
 
-/** The owner-facing settings scope used by the toggle. */
+/** The owner-facing settings scope used by the composer control. */
 export interface GenuiPromptSettingsScope {
   get(): GenuiPromptSettings
-  update(patch: GenuiPromptSettings): Promise<void>
+  update(patch: Required<Pick<GenuiPromptSettings, 'mode' | 'enabled'>>): Promise<void>
 }
 
 /**
- * Mirror prompt-toggle changes into DSH settings without delaying the UI.
+ * Mirror prompt-mode changes into DSH settings without delaying the UI.
  * @param control - the in-memory prompt section control.
  * @param settings - the registered settings scope.
- * @param initialEnabled - fallback when settings contains no stored value.
+ * @param initialMode - fallback when settings contains neither a mode nor `enabled: false`.
  * @param onError - called when persisting a user choice fails.
  */
 export function createPersistedPromptControl(
   control: GenuiPromptControl,
   settings: GenuiPromptSettingsScope,
-  initialEnabled: boolean,
+  initialMode: GenuiPromptMode,
   onError?: (error: unknown) => void,
-  onPersist?: (enabled: boolean) => void,
+  onPersist?: (mode: GenuiPromptMode) => void,
 ): GenuiPromptControl {
-  const stored = settings.get().enabled
-  control.set(typeof stored === 'boolean' ? stored : initialEnabled)
+  control.set(resolvePromptMode(settings.get(), initialMode))
   return {
+    mode: control.mode,
     isEnabled: control.isEnabled,
-    set(enabled) {
-      const next = control.set(enabled)
+    set(mode) {
+      const next = control.set(mode)
       onPersist?.(next)
-      void settings.update({ enabled: next }).catch(error => onError?.(error))
+      void settings.update({ mode: next, enabled: next !== 'off' }).catch(error => onError?.(error))
       return next
     },
   }
 }
 
 /**
- * Create the host-side on/off state for the GenUI authoring section.
- * @param section - stable prompt section values.
+ * Create the host-side tier state for the GenUI authoring section.
+ * `off` removes the section. Any other tier replaces its text.
+ * @param section - stable prompt section name, order, and one text per active tier.
  * @param systemPrompt - host system-prompt registry.
  */
 export function createGenuiPromptControl(
-  section: { name: string; order: number; text: string },
+  section: {
+    name: string
+    order: number
+    texts: Record<GenuiActivePromptMode, string>
+  },
   systemPrompt: GenuiSystemPrompt,
 ): GenuiPromptControl {
   let disposer: (() => void) | undefined
+  let mode: GenuiPromptMode = 'off'
   return {
-    isEnabled: () => disposer !== undefined,
-    set(enabled) {
-      if (enabled === (disposer !== undefined)) return enabled
-      if (enabled) {
-        disposer = systemPrompt.section(section)
-      } else {
-        disposer?.()
-        disposer = undefined
+    mode: () => mode,
+    isEnabled: () => mode !== 'off',
+    set(next) {
+      if (next === mode) return mode
+      disposer?.()
+      disposer = undefined
+      mode = next
+      if (next !== 'off') {
+        disposer = systemPrompt.section({
+          name: section.name,
+          order: section.order,
+          text: section.texts[next],
+        })
       }
-      return enabled
+      return mode
     },
   }
 }
 
 /**
- * Handle GET (read state) and POST `{ enabled: boolean }` (set state).
- * This is deliberately tiny and same-origin only; the button owns the UI state.
- * @param control - host prompt toggle.
+ * Handle GET (read mode) and POST `{ mode }` (set mode).
+ * This is deliberately tiny and same-origin only; the dropdown owns the UI state.
+ * @param control - host prompt control.
  */
 export function createGenuiPromptControlHandler(
-  control: Pick<GenuiPromptControl, 'isEnabled' | 'set'> & { persisted?: () => boolean },
+  control: Pick<GenuiPromptControl, 'mode' | 'set'> & { persisted?: () => boolean },
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method === 'GET') {
       respond(res, 200, {
-        enabled: control.isEnabled(),
+        mode: control.mode(),
         ...(control.persisted === undefined ? {} : { persisted: control.persisted() }),
       })
       return
@@ -164,11 +204,11 @@ export function createGenuiPromptControlHandler(
     }
     try {
       const payload = await readJsonObject(req)
-      if (typeof payload.enabled !== 'boolean') {
-        respond(res, 400, { error: 'enabled-must-be-boolean' })
+      if (!isGenuiPromptMode(payload.mode)) {
+        respond(res, 400, { error: 'mode-must-be-known' })
         return
       }
-      respond(res, 200, { enabled: control.set(payload.enabled) })
+      respond(res, 200, { mode: control.set(payload.mode) })
     } catch {
       respond(res, 400, { error: 'invalid-json' })
     }

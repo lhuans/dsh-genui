@@ -143,7 +143,7 @@ export const en: Messages = {
   },
   howItWorks: {
     title: 'How it works',
-    body: 'The plugin adds a prompt that teaches the model to output structured JSON in `schemaJson` code blocks when a UI helps. The composer sparkle toggle controls this guidance and starts on. DSH renders that JSON into real components via OpenTiny GenUI SDK — streaming as the model writes, and keeping already rendered cards visible if generation is paused. Components are whitelisted; no arbitrary HTML or scripts.',
+    body: 'The plugin adds a prompt that teaches the model to output structured JSON in `schemaJson` code blocks when a UI helps. The composer sparkle menu is labeled 关闭, 精简, 标准, and 全量, and starts on 标准. Hover an item to see what it includes. DSH renders that JSON into real components via OpenTiny GenUI SDK — streaming as the model writes, and keeping already rendered cards visible if generation is paused. Components are whitelisted; no arbitrary HTML or scripts.',
   },
   install: {
     title: 'Install',
@@ -153,8 +153,8 @@ export const en: Messages = {
       'Run the install command above in a new terminal',
       'Stop DSH (Ctrl+C), restart with `dsh web`, refresh browser, open a new session',
     ],
-    enable: 'GenUI authoring starts on by default and remembers your last choice after DSH restarts. Use the sparkle button in the composer tool row to turn it off if needed; card rendering stays installed.',
-    toggleImageAlt: 'DSH composer showing the sparkle toggle with the tooltip "GenUI prompt off".',
+    enable: 'GenUI authoring starts on 标准 and remembers your last choice after DSH restarts. Use the sparkle menu in the composer tool row to pick 关闭, 精简, 标准, or 全量. Hover an item for a short explanation. Card rendering stays installed.',
+    toggleImageAlt: 'DSH composer showing the sparkle menu for GenUI prompt modes.',
     verify: 'In a new session, say "generate a calculator". If keys appear and work, you\'re set.',
     remove: 'Remove: `dsh plugin --profile web remove dsh-genui` (restart required).',
   },
@@ -163,7 +163,7 @@ export const en: Messages = {
     items: [
       {
         q: 'Still seeing code blocks?',
-        a: 'Check the sparkle toggle first, then the restart. Stop DSH, restart, refresh, and open a new session.',
+        a: 'Check the sparkle menu first, then the restart. Stop DSH, restart, refresh, and open a new session.',
       },
       {
         q: 'pnpm not found?',
@@ -171,7 +171,7 @@ export const en: Messages = {
       },
       {
         q: 'AI not using UI by default?',
-        a: 'It is enabled by default. If it gets stuck on text, make sure the sparkle toggle is on, then ask: "answer with a chart/form/interface".',
+        a: '标准 is the default. If it gets stuck on text, pick 精简, 标准, or 全量 in the sparkle menu, then ask: "answer with a chart/form/interface".',
       },
       {
         q: 'Breaks plain text replies?',
@@ -282,7 +282,7 @@ export const zh: Messages = {
   },
   howItWorks: {
     title: '它是怎么做到的',
-    body: '插件给模型加一段提示词，教它在需要时输出结构化 JSON（写在 `schemaJson` 代码块里）；输入框里的星形开关控制这段提示词，并且默认开启。DSH 网页端拿到 JSON 后，通过 OpenTiny GenUI SDK 渲染成真实组件，流式输出，写到哪渲染到哪。如果中途暂停，已经渲染出的卡片会保留在界面上。组件来自白名单，塞不进 HTML 或脚本。',
+    body: '插件给模型加一段提示词，教它在需要时输出结构化 JSON（写在 `schemaJson` 代码块里）；输入框里的星形菜单选择关闭、精简、标准或全量，默认是标准。悬停选项可看这一档包含什么。DSH 网页端拿到 JSON 后，通过 OpenTiny GenUI SDK 渲染成真实组件，流式输出，写到哪渲染到哪。如果中途暂停，已经渲染出的卡片会保留在界面上。组件来自白名单，塞不进 HTML 或脚本。',
   },
   install: {
     title: '怎么装',
@@ -292,8 +292,8 @@ export const zh: Messages = {
       '在新终端执行上面的安装命令',
       '回到 DSH 终端 Ctrl+C 停掉，重新 `dsh web`，刷新浏览器，开新会话',
     ],
-    enable: 'GenUI 授权提示词默认开启，并会记住你上一次的选择，DSH 重启后保持不变。需要临时关闭时，点击输入框工具行里的星形按钮即可；卡片渲染能力始终保留。',
-    toggleImageAlt: 'DSH 输入框截图：星形按钮 hover 时显示「GenUI prompt off」提示。',
+    enable: 'GenUI 提示词默认是「标准」，并会记住你上一次的选择，DSH 重启后保持不变。输入框工具行里的星形菜单可选关闭、精简、标准、全量，悬停可看说明；卡片渲染能力始终保留。',
+    toggleImageAlt: 'DSH 输入框截图：星形菜单用于选择 GenUI 提示词档位。',
     verify: '在新会话里说「生成一个计算器」。如果出现能按的计算器，就成了。',
     remove: '卸载：`dsh plugin --profile web remove dsh-genui`（同样需要重启）。',
   },
@@ -302,7 +302,7 @@ export const zh: Messages = {
     items: [
       {
         q: '装完还是显示成代码块？',
-        a: '先检查星形开关，再检查重启。停服务 → 重启 → 刷新 → 开新会话。',
+        a: '先检查星形菜单，再检查重启。停服务 → 重启 → 刷新 → 开新会话。',
       },
       {
         q: '提示 pnpm not found？',
@@ -310,7 +310,7 @@ export const zh: Messages = {
       },
       {
         q: 'AI 不主动用界面？',
-        a: 'GenUI 提示词默认开启。如果它一直用文字回答，先确认星形开关已打开，再说「用界面/表单/图表的方式给我」。',
+        a: 'GenUI 提示词默认是「标准」。如果它一直用文字回答，先把星形菜单改成精简、标准或全量，再说「用界面/表单/图表的方式给我」。',
       },
       {
         q: '会不会影响原来的用法？',
