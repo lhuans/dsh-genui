@@ -1,0 +1,92 @@
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump from the latest v* tag (package.json on main if none)
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Publish only runs from main (selected ${{ github.ref }})."
+          exit 1
+
+      - name: Fetch release tags
+        run: git fetch origin --tags --force
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Bump version from latest tag
+        id: bump
+        run: |
+          set -euo pipefail
+          latest="$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
+          if [ -n "$latest" ]; then
+            base="${latest#v}"
+            echo "Latest tag is ${latest}"
+          else
+            base="$(node -p "require('./package.json').version")"
+            echo "No release tag found; starting from package.json ${base}"
+          fi
+          pnpm version "$base" --workspace-root --no-git-tag-version --allow-same-version --no-git-checks --yes
+          pnpm version "${{ inputs.bump }}" --workspace-root --no-git-tag-version --no-git-checks --yes
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        run: pnpm publish --access public --no-git-checks --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore(release): bump version to ${{ steps.bump.outputs.version }}"
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin "refs/tags/v${{ steps.bump.outputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create "v${{ steps.bump.outputs.version }}"
+          --title "v${{ steps.bump.outputs.version }}"
+          --generate-notes
