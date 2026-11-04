@@ -1,49 +1,102 @@
-.toggle {
+.trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  gap: 4px;
   height: 28px;
+  padding: 0 8px 0 6px;
   border: none;
   border-radius: 14px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
 }
 
-.toggle:hover:not(:disabled),
-.toggle:focus-visible {
+.trigger:hover:not(:disabled),
+.trigger:focus-visible {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
   outline: none;
 }
 
-.toggle[aria-disabled='true'] {
+.trigger[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.4;
 }
 
-.toggle[data-active] {
+.trigger[data-active] {
   background: var(--dsw-alias-button-ghost-active-fill);
   color: var(--dsw-alias-label-primary);
   box-shadow: inset 0 0 0 1px var(--dsw-alias-button-ghost-active-border);
 }
 
-/* The host Tooltip is portal-free and re-anchors inside the composer's
-   container query box, so render this one directly into document.body. */
-.tooltip {
+.label {
+  white-space: nowrap;
+}
+
+/* The host menu is portal-free and re-anchors inside the composer's
+   container query box, so render this one directly into document.body.
+   The composer sits at the bottom of the viewport, so the menu opens upward. */
+.menu {
   position: fixed;
   z-index: 1000;
-  width: max-content;
-  max-width: 50vw;
-  padding: 3px 7px;
-  border-radius: 8px;
-  background: var(--dsw-alias-tooltip-bg);
-  color: var(--dsw-static-neutral-bluish-00);
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  padding: 4px;
+  border-radius: var(--dsw-radius-lg, 8px);
+  background: var(--dsw-menu-surface-fill, var(--dsw-alias-button-floating-fill));
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  color: var(--dsw-alias-label-primary);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent, 0 8px 24px rgb(0 0 0 / 18%));
+  transform: translateY(-100%);
+}
+
+.option {
+  border: none;
+  border-radius: var(--dsw-radius-md, 6px);
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
   font-size: 13px;
-  line-height: 20px;
-  white-space: pre-line;
-  overflow-wrap: break-word;
-  transform: translate(-50%, -100%);
+  line-height: 18px;
+  text-align: left;
+}
+
+.option:hover,
+.option:focus-visible,
+.option[aria-selected='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  outline: none;
+}
+
+.hint {
+  position: fixed;
+  z-index: 1001;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 8px;
+  border-radius: var(--dsw-radius-lg, 8px);
+  background: var(--dsw-menu-surface-fill, var(--dsw-alias-button-floating-fill));
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent, 0 8px 24px rgb(0 0 0 / 18%));
   pointer-events: none;
+}
+
+.hint[data-side='right'] {
+  transform: translateY(-50%);
+}
+
+.hint[data-side='left'] {
+  transform: translate(-100%, -50%);
 }

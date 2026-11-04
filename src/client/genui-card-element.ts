@@ -10,7 +10,7 @@ import { computed, defineComponent, defineCustomElement, h, onMounted, onUnmount
 import { GenuiConfigProvider } from '@opentiny/genui-sdk-vue/config-provider'
 import { GenuiRenderer } from '@opentiny/genui-sdk-vue/renderer'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
-import { materials } from '@opentiny/genui-sdk-materials-vue-opentiny-vue/materials'
+import { plusMaterials } from '@opentiny/genui-sdk-materials-vue-opentiny-vue/materials'
 import '@opentiny/tiny-robot/dist/style.css'
 import { DSH_GENUI_CARD_TAG } from './genui-card-tag.ts'
 import { DARK_ATTR, isDarkMode, parseThemedContent } from './genui-theme.ts'
@@ -53,7 +53,7 @@ const DshGenuiCard = defineComponent({
     onUnmounted(() => void observer?.disconnect())
 
     return () => h(GenuiConfigProvider, {
-      materials,
+      materials: plusMaterials,
       id,
       theme: themeMode.value,
     }, {

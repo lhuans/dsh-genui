@@ -5,8 +5,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { materialsMeta } from '@opentiny/genui-sdk-materials-vue-opentiny-vue/meta'
-import { genPrompt } from '@opentiny/genui-sdk-core'
+import {
+  materialsMeta,
+  miniMaterialsMeta,
+  plusMaterialsMeta,
+} from '@opentiny/genui-sdk-materials-vue-opentiny-vue/meta'
+import { genPrompt, type IGenPromptCustomConfig, type IMaterialsMeta } from '@opentiny/genui-sdk-core'
 import {
   createGenuiPromptControl,
   createGenuiPromptControlHandler,
@@ -16,6 +20,10 @@ import {
   type GenuiPromptSettings,
   type PromptSettingsHost,
 } from './prompt-control.ts'
+import {
+  DEFAULT_PROMPT_MODE,
+  type GenuiPromptMode,
+} from './prompt-mode.ts'
 import { adjustAuthoringPrompt } from './authoring-prompt.ts'
 import { GENUI_PROMPT_CONTROL_URL } from './prompt-control-url.ts'
 import {
@@ -51,45 +59,62 @@ export interface Config {
   sectionOrder: number
   /** Stable section name in the prompt registry. */
   sectionName: string
-  /** Whether the authoring prompt starts enabled. Live-editable on DSH 0.2. */
+  /**
+   * Legacy on/off toggle. Kept so a profile saved before prompt tiers still
+   * resolves: `false` means off, otherwise standard when `promptMode` is absent.
+   */
   promptEnabled: boolean
+  /** Selected authoring tier. Omitted until the user picks one or a new write lands. */
+  promptMode?: GenuiPromptMode
 }
+
+const PromptModeSchema = z.union([
+  z.const('off'),
+  z.const('mini'),
+  z.const('standard'),
+  z.const('plus'),
+])
 
 export const Config: z<Config> = z.object({
   sectionOrder: z.number().default(80),
   sectionName: z.string().default('genui:cards'),
   promptEnabled: z.boolean().default(true).extra('volatile', true),
+  promptMode: PromptModeSchema.extra('volatile', true),
 })
 
-/** Settings schema for the user's last prompt-toggle choice. */
+/** Settings schema for the user's last prompt-mode choice. */
 export const PromptSettings: z<GenuiPromptSettings> = z.object({
   enabled: z.boolean().default(true),
+  mode: PromptModeSchema,
 })
 
-/**
- * Create the GenUI authoring guidance for the host system-prompt registry.
- * @returns The prompt text to register while the composer toggle is enabled.
- */
-function genuiPromptText(): string {
-  return adjustAuthoringPrompt(genPrompt('Vue', materialsMeta, {
-    customActions: [
-      {
-        name: 'continueChat',
-        description:
-          'Continue the conversation (e.g. form submit). Pass a short message only; the host appends the card state (formData, etc.) automatically.',
-        parameters: {
-          type: 'object',
-          properties: {
-            message: {
-              type: 'string',
-              description: 'Short follow-up text (button label or summary). Do not put form fields here.',
-            },
+const CONTINUE_CHAT = {
+  customActions: [
+    {
+      name: 'continueChat',
+      description:
+        'Continue the conversation (e.g. form submit). Pass a short message only; the host appends the card state (formData, etc.) automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          message: {
+            type: 'string',
+            description: 'Short follow-up text (button label or summary). Do not put form fields here.',
           },
-          required: ['message'],
         },
+        required: ['message'],
       },
-    ],
-  }))
+    },
+  ],
+} satisfies IGenPromptCustomConfig
+
+/**
+ * Build one authoring tier.
+ * The SDK still marks "only schemaJson" and "always make a card" as highest
+ * priority, so each tier is rewritten with the same DSH replacements.
+ */
+function genuiPromptText(meta: IMaterialsMeta): string {
+  return adjustAuthoringPrompt(genPrompt('Vue', meta, CONTINUE_CHAT))
 }
 
 /**
@@ -105,42 +130,47 @@ export function apply(ctx: Context, config: Config): void {
   const promptControl = createGenuiPromptControl({
     name: config.sectionName,
     order: config.sectionOrder,
-    text: genuiPromptText(),
+    texts: {
+      mini: genuiPromptText(miniMaterialsMeta),
+      standard: genuiPromptText(materialsMeta),
+      plus: genuiPromptText(plusMaterialsMeta),
+    },
   }, systemPrompt)
 
   // The endpoint must read through this indirection because settings attach
   // asynchronously after the web route has already been registered.
-  let currentControl: Pick<GenuiPromptControl, 'isEnabled' | 'set'> = promptControl
+  let currentControl: Pick<GenuiPromptControl, 'mode' | 'set'> = promptControl
   let persistedAttached = false
-  const endpointControl: Pick<GenuiPromptControl, 'isEnabled' | 'set'> & { persisted(): boolean } = {
-    isEnabled: () => currentControl.isEnabled(),
-    set: enabled => currentControl.set(enabled),
+  const endpointControl: Pick<GenuiPromptControl, 'mode' | 'set'> & { persisted(): boolean } = {
+    mode: () => currentControl.mode(),
+    set: mode => currentControl.set(mode),
     persisted: () => persistedAttached,
   }
 
-  // Authoring starts on; disposal keeps a reloaded plugin from leaking the section.
+  // Authoring starts at standard; disposal keeps a reloaded plugin from leaking the section.
   ctx.effect(() => {
-    promptControl.set(true)
-    return () => promptControl.set(false)
-  }, 'dsh-genui: prompt toggle state')
+    promptControl.set(DEFAULT_PROMPT_MODE)
+    return () => promptControl.set('off')
+  }, 'dsh-genui: prompt mode state')
 
   ctx.inject(['settings'], (settingsCtx) => {
     const settings = (settingsCtx as Context & { settings: PromptSettingsHost }).settings
     const scope = openPromptSettings(settings, {
+      configMode: config.promptMode,
       configEnabled: config.promptEnabled !== false,
       schema: PromptSettings,
     })
     if (scope === undefined) {
-      ctx.logger.warn('dsh-genui: prompt toggle will not persist')
+      ctx.logger.warn('dsh-genui: prompt mode will not persist')
       return
     }
     ctx.logger.debug('dsh-genui: settings service attached')
     settingsCtx.effect(() => {
-      // Persist explicit clicks, but never write the unload-time cleanup state.
-      const persistedControl = createPersistedPromptControl(promptControl, scope, true, error => {
+      // Persist explicit choices, but never write the unload-time cleanup state.
+      const persistedControl = createPersistedPromptControl(promptControl, scope, DEFAULT_PROMPT_MODE, error => {
         ctx.logger.warn('dsh-genui: failed to persist prompt state', error)
-      }, enabled => {
-        ctx.logger.debug('dsh-genui: persisting prompt state enabled=%s', String(enabled))
+      }, mode => {
+        ctx.logger.debug('dsh-genui: persisting prompt state mode=%s', mode)
       })
       currentControl = persistedControl
       persistedAttached = true
@@ -159,7 +189,7 @@ export function apply(ctx: Context, config: Config): void {
       path: GENUI_PROMPT_CONTROL_URL,
       handler: createGenuiPromptControlHandler(endpointControl),
     }),
-    'dsh-genui: prompt toggle state endpoint',
+    'dsh-genui: prompt mode endpoint',
   )
   ctx.effect(
     () => webServer.register({

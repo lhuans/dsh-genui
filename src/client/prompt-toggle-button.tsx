@@ -3,25 +3,40 @@ import { createPortal } from 'react-dom'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { GENUI_PROMPT_CONTROL_URL } from '../prompt-control-url.ts'
+import {
+  isGenuiPromptMode,
+  type GenuiPromptMode,
+} from '../prompt-mode.ts'
+import {
+  PROMPT_MODE_MENU_MODES,
+  promptModeOptionKey,
+  promptModeText,
+  type PromptModeCopyKey,
+} from './prompt-mode-copy.ts'
 import { pickSparkleIcon } from './sparkle-icon.ts'
 import css from './prompt-toggle-button.module.css'
 
-/** Composer slot props; the toggle reads its state from the host route. */
-export type PromptToggleButtonProps = PropsRuntime<'conversation.input.left'>
+/** Composer slot props; `t` is present when the host installed the locale seat. */
+export type PromptToggleButtonProps = PropsRuntime<'conversation.input.left'> & {
+  t?: (key: string) => string
+}
 
 /**
- * Turn the GenUI authoring prompt on or off from the composer tool row.
+ * Choose the GenUI authoring prompt tier from the composer tool row.
  * Rendering stays installed either way; only the prompt section changes.
  */
 const SparkleIcon = pickSparkleIcon(primitives)
 
-export function PromptToggleButton(_props: PromptToggleButtonProps) {
-  const [enabled, setEnabled] = useState(false)
+export function PromptToggleButton({ t }: PromptToggleButtonProps) {
+  const text = (key: PromptModeCopyKey) => promptModeText(t, key)
+  const [mode, setMode] = useState<GenuiPromptMode>('standard')
   const [available, setAvailable] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [tooltipPoint, setTooltipPoint] = useState<{ left: number; top: number } | null>(null)
+  const [open, setOpen] = useState(false)
+  const [menuPoint, setMenuPoint] = useState<{ left: number; top: number } | null>(null)
+  const [hint, setHint] = useState<{ text: string; left: number; top: number; side: 'right' | 'left' } | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let active = true
@@ -29,11 +44,11 @@ export function PromptToggleButton(_props: PromptToggleButtonProps) {
     fetch(GENUI_PROMPT_CONTROL_URL, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(String(response.status))
-        const state = await response.json() as { enabled?: unknown }
-        if (active) {
-          setEnabled(state.enabled === true)
-          setAvailable(true)
-        }
+        const state = await response.json() as { mode?: unknown }
+        if (!active) return
+        if (!isGenuiPromptMode(state.mode)) throw new Error('bad-mode')
+        setMode(state.mode)
+        setAvailable(true)
       })
       .catch(() => {
         if (active) setAvailable(false)
@@ -44,99 +59,152 @@ export function PromptToggleButton(_props: PromptToggleButtonProps) {
     }
   }, [])
 
-  const toggle = useCallback(async () => {
-    if (busy) return
-    const next = !enabled
+  const showHint = useCallback((element: HTMLElement, text: string) => {
+    const rect = element.getBoundingClientRect()
+    const side = rect.right + 228 < window.innerWidth ? 'right' : 'left'
+    setHint({
+      text,
+      left: side === 'right' ? rect.right + 8 : rect.left - 8,
+      top: rect.top + rect.height / 2,
+      side,
+    })
+  }, [])
+
+  const choose = useCallback(async (next: GenuiPromptMode) => {
+    setHint(null)
+    setOpen(false)
+    if (busy || !available || next === mode) return
+    const previous = mode
     setBusy(true)
-    setEnabled(next)
+    setMode(next)
     try {
       const response = await fetch(GENUI_PROMPT_CONTROL_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ enabled: next }),
+        body: JSON.stringify({ mode: next }),
       })
       if (!response.ok) throw new Error(String(response.status))
-      const state = await response.json() as { enabled?: unknown }
-      setEnabled(state.enabled === true)
+      const state = await response.json() as { mode?: unknown }
+      if (!isGenuiPromptMode(state.mode)) throw new Error('bad-mode')
+      setMode(state.mode)
       setAvailable(true)
     } catch {
-      setEnabled(!next)
+      setMode(previous)
       setAvailable(false)
     } finally {
       setBusy(false)
     }
-  }, [busy, enabled])
+  }, [available, busy, mode])
 
-  const showTooltip = useCallback(() => {
-    if (tooltipTimer.current !== null) return
-    tooltipTimer.current = setTimeout(() => {
-      tooltipTimer.current = null
-      const button = buttonRef.current
-      if (button === null) return
-      const rect = button.getBoundingClientRect()
-      setTooltipPoint({ left: rect.left + rect.width / 2, top: rect.top - 8 })
-    }, 120)
+  const placeMenu = useCallback(() => {
+    const button = buttonRef.current
+    if (button === null) return
+    const rect = button.getBoundingClientRect()
+    setMenuPoint({ left: rect.left, top: rect.top - 4 })
   }, [])
-
-  const hideTooltip = useCallback(() => {
-    if (tooltipTimer.current !== null) {
-      clearTimeout(tooltipTimer.current)
-      tooltipTimer.current = null
-    }
-    setTooltipPoint(null)
-  }, [])
-
-  const tooltipOpen = tooltipPoint !== null
 
   useLayoutEffect(() => {
-    if (!tooltipOpen) return
-    const update = () => {
-      const button = buttonRef.current
-      if (button === null) return
-      const rect = button.getBoundingClientRect()
-      setTooltipPoint({ left: rect.left + rect.width / 2, top: rect.top - 8 })
-    }
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+    if (!open) return
+    placeMenu()
+    window.addEventListener('resize', placeMenu)
+    window.addEventListener('scroll', placeMenu, true)
     return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', placeMenu)
+      window.removeEventListener('scroll', placeMenu, true)
     }
-  }, [tooltipOpen])
+  }, [open, placeMenu])
 
-  useEffect(() => hideTooltip, [hideTooltip])
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (buttonRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setHint(null)
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
 
-  const label = available
-    ? (enabled ? 'GenUI prompt on' : 'GenUI prompt off')
-    : 'GenUI prompt unavailable'
+  const label = available ? text(promptModeOptionKey(mode, 'mode')) : text('unavailable')
+  const menuLabel = text('menu')
+  const menuId = 'genui-prompt-mode-menu'
 
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
-        className={css.toggle}
-        aria-label="GenUI prompt"
-        aria-pressed={enabled}
+        className={css.trigger}
+        aria-label={menuLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         aria-disabled={!available}
-        data-active={enabled || undefined}
-        onClick={() => { if (available && !busy) void toggle() }}
+        data-active={available && mode !== 'off' ? '' : undefined}
+        onClick={() => {
+          if (!available || busy) return
+          setHint(null)
+          setOpen(current => !current)
+        }}
         onMouseDown={(event) => { event.preventDefault() }}
-        onMouseEnter={showTooltip}
-        onMouseLeave={hideTooltip}
-        onFocus={showTooltip}
-        onBlur={hideTooltip}
       >
         {SparkleIcon ? <SparkleIcon size={14} /> : null}
+        <span className={css.label}>{label}</span>
       </button>
-      {tooltipPoint !== null && createPortal(
-        <span
-          className={css.tooltip}
-          role="tooltip"
-          style={{ left: tooltipPoint.left, top: tooltipPoint.top }}
+      {open && menuPoint !== null && createPortal(
+        <div
+          ref={menuRef}
+          id={menuId}
+          className={css.menu}
+          role="listbox"
+          aria-label={menuLabel}
+          style={{ left: menuPoint.left, top: menuPoint.top }}
         >
-          {label}
+          {PROMPT_MODE_MENU_MODES.map(optionMode => {
+            const optionLabel = text(promptModeOptionKey(optionMode, 'mode'))
+            const description = text(promptModeOptionKey(optionMode, 'hint'))
+            return (
+              <button
+                key={optionMode}
+                type="button"
+                className={css.option}
+                role="option"
+                aria-selected={optionMode === mode}
+                aria-label={`${optionLabel}. ${description}`}
+                onMouseDown={(event) => { event.preventDefault() }}
+                onMouseEnter={(event) => { showHint(event.currentTarget, description) }}
+                onFocus={(event) => { showHint(event.currentTarget, description) }}
+                onMouseLeave={() => { setHint(null) }}
+                onBlur={() => { setHint(null) }}
+                onClick={() => { void choose(optionMode) }}
+              >
+                {optionLabel}
+              </button>
+            )
+          })}
+        </div>,
+        document.body,
+      )}
+      {hint !== null && createPortal(
+        <span
+          className={css.hint}
+          role="tooltip"
+          data-side={hint.side}
+          style={{ left: hint.left, top: hint.top }}
+        >
+          {hint.text}
         </span>,
         document.body,
       )}

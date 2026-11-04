@@ -157,7 +157,7 @@ DSH locks in its plugin set at startup, so **nothing changes in the UI until you
 
 ### GenUI authoring prompt
 
-GenUI authoring starts on by default and remembers your last choice across DSH restarts. Use the sparkle button in the composer tool row if you want to turn the authoring guidance off. Card rendering stays installed either way.
+GenUI authoring starts on 标准 and remembers your last choice across DSH restarts. The sparkle menu in the composer tool row follows DSH's language. In Chinese the tiers are 关闭, 精简, 标准, and 全量; in every other language they are Off, Mini, Standard, and Plus. Off sends no GenUI prompt. Mini is forms, tables, and cards. Standard adds tabs and charts. Plus adds trees, dialogs, and the rest of the component set. Hover an item to read what it includes. Card rendering stays installed either way.
 
 ### Check that it worked
 
@@ -206,7 +206,7 @@ DSH needs pnpm to manage plugins. Run `corepack enable` (or `npm i -g pnpm`), th
 
 **The AI doesn't use interfaces on its own?**
 
-If the sparkle toggle is off, the model has no GenUI authoring guidance. Turn it back on, then say something like "give me a form / chart / interface."
+If the sparkle menu is 关闭, the model has no GenUI authoring guidance. Pick 精简, 标准, or 全量, then say something like "give me a form / chart / interface." Charts need 标准 or 全量.
 
 **Does this change how DSH normally works?**
 
@@ -222,7 +222,7 @@ Yes. Run `dsh plugin remove`, restart, and DSH is back to its original state wit
 
 In short: the model no longer writes only text — it also writes a *description of an interface*, and the browser renders that description into real components.
 
-A bit more detail: the plugin adds a prompt section teaching the model to emit structured JSON (inside a `schemaJson` code block) when an interface would help. The composer sparkle toggle controls that section and is enabled by default. The DSH web client picks up the JSON and hands it to a renderer. It's streaming, so the interface appears as the model writes it — no waiting for the full reply.
+A bit more detail: the plugin adds a prompt section teaching the model to emit structured JSON (inside a `schemaJson` code block) when an interface would help. The composer sparkle menu picks that section's size and starts on 标准. The DSH web client picks up the JSON and hands it to a renderer. It's streaming, so the interface appears as the model writes it — no waiting for the full reply.
 
 The components come from [OpenTiny GenUI SDK](https://opentiny.design/genui-sdk) and the OpenTiny Vue library — OpenTiny's generative-UI stack, a spec plus rendering engine for letting LLMs produce interfaces. dsh-genui wires that into the DSH conversation flow.
 
