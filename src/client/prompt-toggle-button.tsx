@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { GENUI_PROMPT_CONTROL_URL } from '../prompt-control-url.ts'
 import {
   isGenuiPromptMode,
@@ -17,7 +16,7 @@ import { pickSparkleIcon } from './sparkle-icon.ts'
 import css from './prompt-toggle-button.module.css'
 
 /** Composer slot props; `t` is present when the host installed the locale seat. */
-export type PromptToggleButtonProps = PropsRuntime<'conversation.input.left'> & {
+export type PromptToggleButtonProps = {
   t?: (key: string) => string
 }
 

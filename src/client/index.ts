@@ -7,14 +7,14 @@ import { ASSISTANT_STEP_PRIORITY, GenuiAssistantNodeView } from './GenuiAssistan
 import { prefetchGenuiRuntime } from './load-genui-runtime.ts'
 import { captureBuiltinAssistant, type AssistantStepEntry } from './builtin-assistant.ts'
 import { borrowReasoningBody, releaseBorrowedReasoningBody, type BorrowableSlotEntry } from './reasoning-body.ts'
-import { en, zh } from './prompt-mode-copy.ts'
+import { en, zh, type PromptModeCopy } from './prompt-mode-copy.ts'
 import { PromptToggleButton } from './prompt-toggle-button.tsx'
 
 export const inject = ['slots', 'locale']
 
 /** Host locale service. DSH falls other languages back to the English dictionary. */
 interface LocaleHost {
-  register(ns: string, dicts: { zh: Record<string, string>; en: Record<string, string> }): () => void
+  register(ns: string, dicts: { zh: PromptModeCopy; en: PromptModeCopy }): () => void
 }
 
 /**
@@ -24,8 +24,11 @@ interface LocaleHost {
 export function apply(ctx: Context): void {
   prefetchGenuiRuntime()
   const locale = (ctx as Context & { locale: LocaleHost }).locale
+  const host = ctx as Context & { slots: AssistantSlotLedger & {
+    inject(name: string, register: () => () => void): () => void
+  } }
   ctx.effect(() => locale.register('dsh-genui', { zh, en }), 'dsh-genui: prompt mode copy')
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+  host.slots.inject('conversation.input.left', () => host.slots.register({
     name: 'conversation.input.left',
     id: 'genui-prompt-toggle',
     order: 0,
@@ -35,7 +38,7 @@ export function apply(ctx: Context): void {
   // Omitting `locale` leaves `t` undefined and the view crashes; the slot then
   // abdicates to the built-in assistant-step (schemaJson shows as a Markdown
   // code fence — the failure mode users hit).
-  ctx.slots.inject('conversation.chat.node', () => registerAssistantStep(ctx))
+  host.slots.inject('conversation.chat.node', () => registerAssistantStep(host))
 }
 
 /** Ledger face used to find the shadow entry after it registers. */
@@ -54,8 +57,8 @@ interface AssistantSlotLedger {
  * @param ctx - browser Cordis context with the slot service.
  * @returns disposer for declaration collapse.
  */
-function registerAssistantStep(ctx: Context): () => void {
-  const slots = ctx.slots as AssistantSlotLedger
+function registerAssistantStep(ctx: Context & { slots: AssistantSlotLedger }): () => void {
+  const slots = ctx.slots
   const disposeEntry = slots.register({
     name: 'conversation.chat.node',
     key: 'assistant-step',
