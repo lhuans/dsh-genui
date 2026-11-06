@@ -126,6 +126,7 @@
 
 - 装好 Node.js
 - 装好 `pnpm`（DSH 管理插件时要用它）。没有的话执行 `corepack enable` 或 `npm i -g pnpm`，然后**新开一个终端**，确认 `pnpm -v` 有输出
+- DSH **0.2.2 及以上、0.3 之前**（`dsh --version` 为 `0.2.2-rc.1` 或同系列更新版本）
 - DSH 能跑起来：`npx @deepseek-ai/dsh web`，默认地址 `http://127.0.0.1:3080`
 
 ### 方式一：让 AI 帮你装（推荐给不常用命令行的人）

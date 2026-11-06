@@ -126,6 +126,7 @@ When you're not sure what to ask for, just say "answer me with an interface" and
 
 - Node.js installed
 - `pnpm` installed (DSH uses it to manage plugins). If you don't have it, run `corepack enable` or `npm i -g pnpm`, then **open a new terminal** and check that `pnpm -v` prints a version
+- DSH **0.2.2 or newer, before 0.3** (`dsh --version` reports `0.2.2-rc.1` or a later 0.2 release)
 - DSH running: `npx @deepseek-ai/dsh web`, default at `http://127.0.0.1:3080`
 
 ### Option 1: let the AI install it (easiest if you avoid the terminal)

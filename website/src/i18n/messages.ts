@@ -149,6 +149,7 @@ export const en: Messages = {
     title: 'Install',
     steps: [
       'Node.js and pnpm installed (`corepack enable` or `npm i -g pnpm`)',
+      'DSH 0.2.2 or newer, before 0.3 (`dsh --version` is `0.2.2-rc.1` or a later 0.2 release)',
       'DSH running: `npx @deepseek-ai/dsh web` → http://127.0.0.1:3080',
       'Run the install command above in a new terminal',
       'Stop DSH (Ctrl+C), restart with `dsh web`, refresh browser, open a new session',
@@ -288,6 +289,7 @@ export const zh: Messages = {
     title: '怎么装',
     steps: [
       '装好 Node.js 和 pnpm（`corepack enable` 或 `npm i -g pnpm`）',
+      'DSH 0.2.2 及以上、0.3 之前（`dsh --version` 为 `0.2.2-rc.1` 或同系列更新版本）',
       'DSH 能跑起来：`npx @deepseek-ai/dsh web` → http://127.0.0.1:3080',
       '在新终端执行上面的安装命令',
       '回到 DSH 终端 Ctrl+C 停掉，重新 `dsh web`，刷新浏览器，开新会话',
