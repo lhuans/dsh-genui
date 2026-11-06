@@ -1,5 +1,5 @@
 node_modules/
-lib/*.map
+lib/
 *.log
 .DS_Store
 website/dist/

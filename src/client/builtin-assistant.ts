@@ -18,7 +18,7 @@ export interface PresentationSource {
 export interface BuiltinAssistantInject {
   hooks?: { presentation?: PresentationSource | undefined } | undefined
   resolveFilePath?: ((path: string) => string) | undefined
-  fileMentions?: ((...args: never[]) => unknown) | undefined
+  fileMentions?: ((owner: unknown, ...rest: unknown[]) => unknown) | undefined
 }
 
 /** One non-GenUI assistant-step registration. Chat's view is wrapped in `memo`. */

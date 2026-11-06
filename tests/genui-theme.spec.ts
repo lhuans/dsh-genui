@@ -17,12 +17,12 @@ describe('GenUI theme helpers', () => {
     const light = applyChartTheme(schema, false) as typeof schema
     const dark = applyChartTheme(schema, true) as typeof schema
 
-    expect(light.children?.[0].props.options.theme).toBe('cloud-light')
-    expect(dark.children?.[0].props.options.theme).toBe('cloud-dark')
+    expect(light.children?.[0]?.props?.options?.theme).toBe('cloud-light')
+    expect(dark.children?.[0]?.props?.options?.theme).toBe('cloud-dark')
     expect(dark).not.toBe(schema)
     expect(dark.children?.[0]).not.toBe(schema.children[0])
-    expect(schema.children[0].props.options.theme).toBe('light')
-    expect(dark.children?.[1].props.text).toBe('TinyHuichartsLine')
+    expect(schema.children[0]?.props?.options?.theme).toBe('light')
+    expect(dark.children?.[1]?.props.text).toBe('TinyHuichartsLine')
   })
 
   it('repairs stream chunks and keeps completion state for the renderer', () => {

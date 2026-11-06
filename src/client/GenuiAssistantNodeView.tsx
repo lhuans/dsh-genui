@@ -5,15 +5,16 @@
  */
 import { Component, Fragment, memo, useMemo, useState } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
-import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
 import { blockBelongsToGroupPart, type GenuiAssistantNodeViewProps } from './assistant-props.ts'
 import {
   bindPresentation, useBuiltinAssistant, type BuiltinAssistant,
 } from './builtin-assistant.ts'
 import { GenuiTextBody } from './GenuiTextBody.tsx'
+import { MarkdownText } from './host-markdown.ts'
 import { markdownLabels, type GenuiMarkdownLabels } from './markdown-labels.ts'
-import { REASONING_BODY_SLOT } from './reasoning-body.ts'
+import { MESSAGE_IMAGES_SLOT, REASONING_BODY_SLOT } from './reasoning-body.ts'
 import css from './genui-assistant.module.css'
 
 /** Priority below the built-in assistant-step (0) so this entry wins. */
@@ -36,9 +37,12 @@ export const GenuiAssistantNodeView = memo(function GenuiAssistantNodeView(
 })
 
 /** Reply half: schemaJson cards and markdown. Reasoning blocks are omitted. */
-const AssistantReply = memo(function AssistantReply({
-  node, renderMessageImages, fileMentions, t, useTurnData, openFile, inputActions, groupPart,
-}: GenuiAssistantNodeViewProps) {
+const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeViewProps) {
+  const {
+    node, renderMessageImages, fileMentions, loadImage, t, useTurnData, openFile, inputActions, groupPart,
+    renderSlot,
+  } = props
+  const sessionId = (props as { sessionId?: unknown }).sessionId
   const data = node.data
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
@@ -51,10 +55,25 @@ const AssistantReply = memo(function AssistantReply({
     if (tail?.closing?.finalNode.seq !== data.finalNode.seq) return undefined
     return { turn, seq: data.finalNode.seq, openFile }
   }, [data.finalNode, openFile, tail, turn])
-  const mentions = useMemo(
-    () => (owner === undefined ? undefined : fileMentions(owner)),
-    [fileMentions, owner],
-  )
+  const builtin = useBuiltinAssistant()
+  const injectedMentions = useMemo(() => {
+    if (typeof fileMentions === 'function' || builtin?.inject === undefined) return undefined
+    try {
+      return builtin.inject(sessionId)?.fileMentions
+    } catch {
+      return undefined
+    }
+  }, [builtin, fileMentions, sessionId])
+  const mentions = useMemo(() => {
+    if (owner === undefined) return undefined
+    const mention = typeof fileMentions === 'function' ? fileMentions : injectedMentions
+    if (typeof mention !== 'function') return undefined
+    try {
+      return mention(owner) as ReturnType<NonNullable<GenuiAssistantNodeViewProps['fileMentions']>>
+    } catch {
+      return undefined
+    }
+  }, [fileMentions, injectedMentions, owner])
   const labels = useMemo(() => markdownLabels(t), [t])
   const customActions = useMemo<Record<string, ICustomAction>>(() => ({
     continueChat: {
@@ -86,11 +105,13 @@ const AssistantReply = memo(function AssistantReply({
     if (block === undefined) continue
     if (!blockBelongsToGroupPart(block.kind, groupPart)) continue
     switch (block.kind) {
-      case 'text':
+      case 'text': {
+        const text = block.text
+        if (typeof text !== 'string') break
         rendered.push(
           <GenuiTextBody
             key={i}
-            text={block.text}
+            text={text}
             streaming={streaming}
             interrupted={interrupted}
             labels={labels}
@@ -99,6 +120,7 @@ const AssistantReply = memo(function AssistantReply({
           />,
         )
         break
+      }
       case 'reasoning':
         break
       case 'image': {
@@ -110,14 +132,14 @@ const AssistantReply = memo(function AssistantReply({
           group.push(next)
           i += 1
         }
-        rendered.push(
-          <Fragment key={start}>
-            {renderMessageImages({
-              images: group.map(({ attachment }) => ({ attachment })),
-              align: 'start',
-            })}
-          </Fragment>,
-        )
+        const images = group.map((item) => ({
+          attachment: 'attachment' in item ? item.attachment : undefined,
+        }))
+        const gallery = typeof renderMessageImages === 'function'
+          ? renderMessageImages({ images, align: 'start' })
+          : renderSlot?.(MESSAGE_IMAGES_SLOT, { images, loadImage, align: 'start' } as never)
+        if (gallery === undefined || gallery === null) break
+        rendered.push(<Fragment key={start}>{gallery}</Fragment>)
         break
       }
       case 'tool-call':

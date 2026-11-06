@@ -410,7 +410,7 @@ function browserInlinePlugins(id: string, portableCssModuleIds: boolean) {
       const sourceId = rest.slice(isModule ? 'module:'.length : 'global:'.length)
       const fileId = cssFiles.get(virtualId) ?? sourceId
       // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
-      this.addWatchFile(fileId)
+      ;(this as unknown as { addWatchFile(id: string): void }).addWatchFile(fileId)
       const source = await readFile(fileId)
       let cssText: string
       let classMap: Record<string, string> = {}

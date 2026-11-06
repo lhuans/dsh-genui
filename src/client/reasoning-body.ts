@@ -12,6 +12,14 @@
 /** Slot the official cot-translation plugin replaces. */
 export const REASONING_BODY_SLOT = 'conversation.chat.reasoning.body'
 
+/**
+ * Image gallery slot Chat declares on assistant-step.
+ * DSH 0.2.2 paints message images through `renderSlot` instead of a
+ * `renderMessageImages` prop. Listing it here authorizes that call under
+ * the shadow entry without declaring the slot a second time.
+ */
+export const MESSAGE_IMAGES_SLOT = 'conversation.chat.message.images'
+
 /** Owner props the reasoning body slot accepts (display text plus the original). */
 export interface ReasoningBodyOwner {
   readonly rawText: string
@@ -36,6 +44,7 @@ export function borrowReasoningBody(entry: BorrowableSlotEntry): void {
   if (entry.children !== undefined) return
   const children: Record<string, { kind: 'single'; scope: 'session' }> = {
     [REASONING_BODY_SLOT]: { kind: 'single', scope: 'session' },
+    [MESSAGE_IMAGES_SLOT]: { kind: 'single', scope: 'session' },
   }
   Object.defineProperty(children, BORROWED, { value: true })
   entry.children = children

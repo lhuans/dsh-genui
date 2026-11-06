@@ -229,7 +229,7 @@ async function readJsonObject(req: IncomingMessage): Promise<Record<string, unkn
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('body-must-be-object')
   }
-  return parsed
+  return parsed as Record<string, unknown>
 }
 
 function respond(

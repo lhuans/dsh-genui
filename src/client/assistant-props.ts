@@ -39,11 +39,14 @@ export interface GenuiMessageImageSource {
   }
 }
 
-/** Slot-backed gallery renderer supplied by the Chat view owner. */
+/** Slot-backed gallery renderer supplied by older Chat view owners. */
 export type GenuiRenderMessageImages = (owner: {
   readonly images: readonly GenuiMessageImageSource[]
   readonly align: 'start' | 'end'
 }) => ReactNode
+
+/** Session-authorized image loader. Newer hosts pass it beside `renderSlot`. */
+export type GenuiLoadImage = (attachment: unknown) => Promise<string | undefined> | string | undefined
 
 /** Turn-process disclosure state for inline reasoning hiding. */
 export interface GenuiTurnProcessOwner {
@@ -82,8 +85,18 @@ export interface GenuiAssistantNodeViewProps {
       readonly turn?: { readonly status: string }
     }
   }
-  readonly renderMessageImages: GenuiRenderMessageImages
-  readonly fileMentions: (owner: TurnTailOwner) => MarkdownFileMentions | undefined
+  /**
+   * Gallery renderer on hosts before DSH 0.2.2.
+   * Newer hosts omit it and expect `renderSlot('conversation.chat.message.images')`.
+   */
+  readonly renderMessageImages?: GenuiRenderMessageImages | undefined
+  /**
+   * Closing-turn file mentions. DSH 0.2.2 moved this off the owner props and
+   * onto the built-in assistant-step inject. Calling a missing function throws
+   * and the slot abdicates, so schema fences fall back to a JSON code block.
+   */
+  readonly fileMentions?: ((owner: TurnTailOwner, ...rest: unknown[]) => MarkdownFileMentions | undefined) | undefined
+  readonly loadImage?: GenuiLoadImage | undefined
   readonly t: (key: string, params?: Record<string, unknown>) => string
   readonly useTurnData: (key: string) => {
     readonly closing?: { readonly finalNode: { readonly seq: number } }
