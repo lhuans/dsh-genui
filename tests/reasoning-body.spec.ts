@@ -17,6 +17,7 @@ import {
   captureBuiltinAssistant, clearBuiltinAssistant, type PresentationSource,
 } from '../src/client/builtin-assistant.ts'
 import {
+  MESSAGE_IMAGES_SLOT,
   REASONING_BODY_SLOT,
   borrowReasoningBody,
   releaseBorrowedReasoningBody,
@@ -28,6 +29,7 @@ describe('borrowed reasoning body slot', () => {
     borrowReasoningBody(entry)
     expect(entry.children).toMatchObject({
       [REASONING_BODY_SLOT]: { kind: 'single', scope: 'session' },
+      [MESSAGE_IMAGES_SLOT]: { kind: 'single', scope: 'session' },
     })
     const owned = { 'conversation.chat.reasoning.body': { kind: 'single', scope: 'session' } }
     const declared = { children: owned }
@@ -82,6 +84,30 @@ describe('GenuiAssistantNodeView reasoning handoff', () => {
     expect(container.querySelector('[data-cot-translation]')).not.toBeNull()
   })
 
+  it('renders a settled schema fence when the host no longer passes fileMentions', async () => {
+    const seen: unknown[] = []
+    installBuiltin(() => createElement('div', { 'data-official-reasoning': '' }), (owner) => {
+      seen.push(owner)
+      return undefined
+    })
+    const container = await render(viewProps({
+      blocks: [{ kind: 'text', text: '```schemaJson\n{"componentName":"Page"}\n```' }],
+      status: 'settled',
+      groupPart: 'response',
+      renderSlot: () => null,
+      omitFileMentions: true,
+      finalNode: { seq: 3 },
+      turnStatus: 'closed',
+      tail: { closing: { finalNode: { seq: 3 } } },
+    }))
+    expect(container.querySelector('[data-official-reasoning]')).toBeNull()
+    expect(container.querySelector('[data-dsh-genui-assistant]')).not.toBeNull()
+    expect(container.querySelector(
+      '[data-dsh-genui-card-pending], [data-dsh-genui-card], [data-dsh-genui-card-error]',
+    )).not.toBeNull()
+    expect(seen).toHaveLength(1)
+  })
+
   it('keeps a response mount on the GenUI bubble', async () => {
     installBuiltin(() => createElement('div', { 'data-official-reasoning': '' }))
     const container = await render(viewProps({
@@ -115,6 +141,7 @@ function installBuiltin(
     usePresentation: (selector: (policy: { preview?: boolean }) => boolean) => boolean
     renderSlot: NonNullable<GenuiAssistantNodeViewProps['renderSlot']>
   }) => ReturnType<typeof createElement>,
+  fileMentions?: (owner: unknown) => unknown,
 ): void {
   const View = memo(component)
   const policy = { preview: true }
@@ -126,7 +153,10 @@ function installBuiltin(
     component: View,
     options: { key: 'assistant-step' },
     children: { [REASONING_BODY_SLOT]: { kind: 'single', scope: 'session' } },
-    inject: () => ({ hooks: { presentation } }),
+    inject: () => ({
+      hooks: { presentation },
+      ...(fileMentions === undefined ? {} : { fileMentions }),
+    }),
   }], GenuiAssistantNodeView)
 }
 
@@ -145,16 +175,27 @@ function viewProps(input: {
   status: string
   groupPart?: string
   renderSlot: NonNullable<GenuiAssistantNodeViewProps['renderSlot']>
+  omitFileMentions?: boolean
+  finalNode?: { seq: number }
+  turnStatus?: string
+  tail?: { closing: { finalNode: { seq: number } } }
 }): GenuiAssistantNodeViewProps {
   return {
     node: {
-      data: { blocks: input.blocks, status: input.status },
-      location: { kind: 'turn' },
+      data: {
+        blocks: input.blocks,
+        status: input.status,
+        ...(input.finalNode === undefined ? {} : { finalNode: input.finalNode }),
+      },
+      location: {
+        kind: 'turn',
+        ...(input.turnStatus === undefined ? {} : { turn: { status: input.turnStatus } }),
+      },
     },
     renderMessageImages: () => null,
-    fileMentions: () => undefined,
+    ...(input.omitFileMentions === true ? {} : { fileMentions: () => undefined }),
     t: (key) => key,
-    useTurnData: () => undefined,
+    useTurnData: () => input.tail,
     openFile: () => {},
     groupPart: input.groupPart,
     renderSlot: input.renderSlot,

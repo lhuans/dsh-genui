@@ -3,10 +3,10 @@
  */
 import { memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ICustomAction } from '@opentiny/genui-sdk-vue/renderer'
 import { GenuiVueCard } from './GenuiVueCard.tsx'
+import { MarkdownText } from './host-markdown.ts'
 import type { GenuiMarkdownLabels } from './markdown-labels.ts'
 import { splitAssistantText } from './split-assistant-text.ts'
 import css from './genui-assistant.module.css'
