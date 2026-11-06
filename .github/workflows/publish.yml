@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: Semver bump from the latest v* tag (package.json on main if none)
+        description: Semver bump from the latest stable vX.Y.Z tag (package.json on main if none)
         required: true
         type: choice
         options:
@@ -12,6 +12,14 @@ on:
           - minor
           - major
         default: patch
+      channel:
+        description: latest also tags and opens a GitHub release; alpha only publishes the npm dist-tag
+        required: true
+        type: choice
+        options:
+          - latest
+          - alpha
+        default: latest
 
 concurrency:
   group: npm-publish
@@ -52,29 +60,76 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Bump version from latest tag
+      - name: Bump version from latest stable tag
         id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           set -euo pipefail
           latest="$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
           if [ -n "$latest" ]; then
             base="${latest#v}"
-            echo "Latest tag is ${latest}"
+            echo "Latest stable tag is ${latest}"
           else
-            base="$(node -p "require('./package.json').version")"
-            echo "No release tag found; starting from package.json ${base}"
+            base="$(node -p "require('./package.json').version.split('-')[0]")"
+            echo "No stable tag found; starting from package.json ${base}"
           fi
-          pnpm version "$base" --workspace-root --no-git-tag-version --allow-same-version --no-git-checks --yes
-          pnpm version "${{ inputs.bump }}" --workspace-root --no-git-tag-version --no-git-checks --yes
-          version="$(node -p "require('./package.json').version")"
+          if [ "$CHANNEL" = "alpha" ]; then
+            name="$(node -p "require('./package.json').name")"
+            set +e
+            versions_json="$(npm view "$name" versions --json 2>npm-view.err)"
+            status=$?
+            set -e
+            if [ "$status" -ne 0 ]; then
+              if grep -q 'E404' npm-view.err; then
+                versions_json='[]'
+              else
+                cat npm-view.err >&2
+                exit 1
+              fi
+            fi
+            version="$(
+              BASE="$base" BUMP="$BUMP" VERSIONS="$versions_json" node <<'EOF'
+          const [major, minor, patch] = process.env.BASE.split('.').map(Number)
+          const bump = process.env.BUMP
+          let next
+          if (bump === 'major') next = `${major + 1}.0.0`
+          else if (bump === 'minor') next = `${major}.${minor + 1}.0`
+          else if (bump === 'patch') next = `${major}.${minor}.${patch + 1}`
+          else {
+            console.error(`Unknown bump: ${bump}`)
+            process.exit(1)
+          }
+          const raw = (process.env.VERSIONS || '').trim()
+          const parsed = raw ? JSON.parse(raw) : []
+          const versions = Array.isArray(parsed) ? parsed : [parsed]
+          const prefix = `${next}-alpha.`
+          let max = -1
+          for (const version of versions) {
+            if (typeof version !== 'string' || !version.startsWith(prefix)) continue
+            const n = Number(version.slice(prefix.length))
+            if (Number.isInteger(n) && n > max) max = n
+          }
+          process.stdout.write(`${prefix}${max + 1}`)
+          EOF
+            )"
+            pnpm version "$version" --workspace-root --no-git-tag-version --no-git-checks --yes
+          else
+            pnpm version "$base" --workspace-root --no-git-tag-version --allow-same-version --no-git-checks --yes
+            pnpm version "$BUMP" --workspace-root --no-git-tag-version --no-git-checks --yes
+            version="$(node -p "require('./package.json').version")"
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${version} with dist-tag ${CHANNEL}"
 
       - name: Publish
-        run: pnpm publish --access public --no-git-checks --provenance
+        run: pnpm publish --access public --no-git-checks --provenance --tag ${{ inputs.channel }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push tag
+        if: inputs.channel == 'latest'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -84,6 +139,7 @@ jobs:
           git push origin "refs/tags/v${{ steps.bump.outputs.version }}"
 
       - name: Create GitHub Release
+        if: inputs.channel == 'latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
