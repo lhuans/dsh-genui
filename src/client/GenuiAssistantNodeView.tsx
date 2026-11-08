@@ -46,6 +46,10 @@ const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeVie
   const data = node.data
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
+  // Settled prose is what the built-in assistant view offers to Chat as a
+  // text-interaction source. Reply text painted here needs the same flag, or
+  // the built-in quote action never sees a selection inside the bubble.
+  const textInteractionSource = !streaming && !interrupted
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -117,6 +121,7 @@ const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeVie
             labels={labels}
             mentions={mentions}
             customActions={customActions}
+            textInteractionSource={textInteractionSource}
           />,
         )
         break

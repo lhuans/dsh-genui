@@ -18,11 +18,13 @@ export interface GenuiTextBodyProps {
   labels: GenuiMarkdownLabels
   mentions?: MarkdownFileMentions | undefined
   customActions?: Record<string, ICustomAction> | undefined
+  /** Admit selection in settled markdown segments, mirroring the built-in view. */
+  textInteractionSource?: boolean | undefined
 }
 
 /** Render markdown segments and schemaJson fences as GenUI cards. */
 export const GenuiTextBody = memo(function GenuiTextBody({
-  text, streaming, interrupted, labels, mentions, customActions,
+  text, streaming, interrupted, labels, mentions, customActions, textInteractionSource,
 }: GenuiTextBodyProps) {
   const segments = useMemo(
     () => splitAssistantText(text, streaming, interrupted),
@@ -41,6 +43,7 @@ export const GenuiTextBody = memo(function GenuiTextBody({
           streaming={streaming}
           labels={labels}
           fileMentions={mentions}
+          textInteractionSource={textInteractionSource}
         />,
       )
       continue
