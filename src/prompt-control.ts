@@ -30,6 +30,14 @@ export interface GenuiPromptSettings {
    * New writes set this to `mode !== 'off'` so older hosts still find the field.
    */
   enabled?: boolean
+  /** Whether the composer sparkle control is registered. Defaults to true. */
+  showPromptToggle?: boolean
+}
+
+/** Live composer + settings values exposed by the prompt control HTTP API. */
+export interface GenuiPromptUiState {
+  mode: GenuiPromptMode
+  showPromptToggle: boolean
 }
 
 /** One settings form row, as returned by DSH 0.2 `settings.describe()`. */
@@ -43,6 +51,7 @@ export interface PromptSettingsDescriptor {
 export interface PromptConfigPatch {
   promptMode: GenuiPromptMode
   promptEnabled: boolean
+  showPromptToggle: boolean
 }
 
 /**
@@ -74,10 +83,12 @@ export function findPromptSettingsEntry(descriptors: readonly PromptSettingsDesc
 function mentionsPromptSettings(descriptor: PromptSettingsDescriptor): boolean {
   const value = descriptor.value
   if (value !== null && typeof value === 'object') {
-    if ('promptEnabled' in value || 'promptMode' in value) return true
+    if ('promptEnabled' in value || 'promptMode' in value || 'showPromptToggle' in value) return true
   }
   const schema = JSON.stringify(descriptor.schema ?? null)
-  return schema.includes('"promptEnabled"') || schema.includes('"promptMode"')
+  return schema.includes('"promptEnabled"')
+    || schema.includes('"promptMode"')
+    || schema.includes('"showPromptToggle"')
 }
 
 /**
@@ -85,12 +96,18 @@ function mentionsPromptSettings(descriptor: PromptSettingsDescriptor): boolean {
  * @param settings - host settings service.
  * @param options.configMode - resolved Config `promptMode`, when one was stored.
  * @param options.configEnabled - resolved Config `promptEnabled`.
+ * @param options.configShowPromptToggle - resolved Config `showPromptToggle`.
  * @param options.schema - legacy `settings.register` schema.
  * @returns A get/update scope, or undefined when this host cannot persist the choice.
  */
 export function openPromptSettings(
   settings: PromptSettingsHost,
-  options: { configMode?: unknown; configEnabled: boolean; schema: unknown },
+  options: {
+    configMode?: unknown
+    configEnabled: boolean
+    configShowPromptToggle?: unknown
+    schema: unknown
+  },
 ): GenuiPromptSettingsScope | undefined {
   if (typeof settings.register === 'function') {
     return settings.register('dsh-genui', options.schema)
@@ -101,6 +118,7 @@ export function openPromptSettings(
     get: () => ({
       mode: isGenuiPromptMode(options.configMode) ? options.configMode : undefined,
       enabled: options.configEnabled,
+      showPromptToggle: options.configShowPromptToggle !== false,
     }),
     update(patch) {
       const described = typeof settings.describe === 'function' ? settings.describe() : []
@@ -108,6 +126,7 @@ export function openPromptSettings(
       return update(ns, {
         promptMode: patch.mode,
         promptEnabled: patch.mode !== 'off',
+        showPromptToggle: patch.showPromptToggle,
       })
     },
   }
@@ -116,7 +135,11 @@ export function openPromptSettings(
 /** The owner-facing settings scope used by the composer control. */
 export interface GenuiPromptSettingsScope {
   get(): GenuiPromptSettings
-  update(patch: Required<Pick<GenuiPromptSettings, 'mode' | 'enabled'>>): Promise<void>
+  update(patch: {
+    mode: GenuiPromptMode
+    enabled: boolean
+    showPromptToggle: boolean
+  }): Promise<void>
 }
 
 /**
@@ -130,8 +153,11 @@ export function createPersistedPromptControl(
   control: GenuiPromptControl,
   settings: GenuiPromptSettingsScope,
   initialMode: GenuiPromptMode,
-  onError?: (error: unknown) => void,
-  onPersist?: (mode: GenuiPromptMode) => void,
+  options: {
+    getShowPromptToggle: () => boolean
+    onError?: (error: unknown) => void
+    onPersist?: (mode: GenuiPromptMode) => void
+  },
 ): GenuiPromptControl {
   control.set(resolvePromptMode(settings.get(), initialMode))
   return {
@@ -139,11 +165,33 @@ export function createPersistedPromptControl(
     isEnabled: control.isEnabled,
     set(mode) {
       const next = control.set(mode)
-      onPersist?.(next)
-      void settings.update({ mode: next, enabled: next !== 'off' }).catch(error => onError?.(error))
+      options.onPersist?.(next)
+      void settings.update({
+        mode: next,
+        enabled: next !== 'off',
+        showPromptToggle: options.getShowPromptToggle(),
+      }).catch(error => options.onError?.(error))
       return next
     },
   }
+}
+
+/**
+ * Persist the composer-button visibility alongside the current prompt tier.
+ * @param settings - settings scope opened for this plugin entry.
+ * @param state - current mode and visibility to write.
+ * @param onError - called when the write fails.
+ */
+export function persistPromptUiState(
+  settings: GenuiPromptSettingsScope,
+  state: GenuiPromptUiState,
+  onError?: (error: unknown) => void,
+): void {
+  void settings.update({
+    mode: state.mode,
+    enabled: state.mode !== 'off',
+    showPromptToggle: state.showPromptToggle,
+  }).catch(error => onError?.(error))
 }
 
 /**
@@ -182,18 +230,26 @@ export function createGenuiPromptControl(
   }
 }
 
+/** Host face for the shared prompt HTTP API (composer + plugin detail). */
+export interface GenuiPromptUiControl extends Pick<GenuiPromptControl, 'mode' | 'set'> {
+  showPromptToggle(): boolean
+  setShowPromptToggle(show: boolean): boolean
+  persisted?: () => boolean
+}
+
 /**
- * Handle GET (read mode) and POST `{ mode }` (set mode).
- * This is deliberately tiny and same-origin only; the dropdown owns the UI state.
- * @param control - host prompt control.
+ * Handle GET (read UI state) and POST `{ mode?, showPromptToggle? }`.
+ * This is deliberately tiny and same-origin only; the UIs own optimistic state.
+ * @param control - host prompt UI control.
  */
 export function createGenuiPromptControlHandler(
-  control: Pick<GenuiPromptControl, 'mode' | 'set'> & { persisted?: () => boolean },
+  control: GenuiPromptUiControl,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   return async (req, res) => {
     if (req.method === 'GET') {
       respond(res, 200, {
         mode: control.mode(),
+        showPromptToggle: control.showPromptToggle(),
         ...(control.persisted === undefined ? {} : { persisted: control.persisted() }),
       })
       return
@@ -204,11 +260,18 @@ export function createGenuiPromptControlHandler(
     }
     try {
       const payload = await readJsonObject(req)
-      if (!isGenuiPromptMode(payload.mode)) {
-        respond(res, 400, { error: 'mode-must-be-known' })
+      const hasMode = isGenuiPromptMode(payload.mode)
+      const hasShow = typeof payload.showPromptToggle === 'boolean'
+      if (!hasMode && !hasShow) {
+        respond(res, 400, { error: 'mode-or-show-required' })
         return
       }
-      respond(res, 200, { mode: control.set(payload.mode) })
+      if (hasMode) control.set(payload.mode)
+      if (hasShow) control.setShowPromptToggle(payload.showPromptToggle)
+      respond(res, 200, {
+        mode: control.mode(),
+        showPromptToggle: control.showPromptToggle(),
+      })
     } catch {
       respond(res, 400, { error: 'invalid-json' })
     }
