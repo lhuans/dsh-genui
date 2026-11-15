@@ -46,10 +46,10 @@ const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeVie
   const data = node.data
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
-  // Settled prose is what the built-in assistant view offers to Chat as a
-  // text-interaction source. Reply text painted here needs the same flag, or
-  // the built-in quote action never sees a selection inside the bubble.
-  const textInteractionSource = !streaming && !interrupted
+  // Match the built-in view: only settled prose with a durable message ID
+  // may be offered to Chat as a text-interaction source.
+  const textInteractionSource =
+    data.status === 'settled' && data.finalNode?.messageId !== undefined
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined

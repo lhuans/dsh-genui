@@ -77,7 +77,7 @@ export interface GenuiAssistantNodeViewProps {
     readonly data: {
       readonly blocks: readonly AssistantBlock[]
       readonly status: string
-      readonly finalNode?: { readonly seq: number }
+      readonly finalNode?: { readonly seq: number; readonly messageId?: unknown }
       readonly step?: number
     }
     readonly location: {
