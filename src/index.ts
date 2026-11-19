@@ -16,8 +16,10 @@ import {
   createGenuiPromptControlHandler,
   createPersistedPromptControl,
   openPromptSettings,
+  persistPromptUiState,
   type GenuiPromptControl,
   type GenuiPromptSettings,
+  type GenuiPromptUiControl,
   type PromptSettingsHost,
 } from './prompt-control.ts'
 import {
@@ -66,6 +68,11 @@ export interface Config {
   promptEnabled: boolean
   /** Selected authoring tier. Omitted until the user picks one or a new write lands. */
   promptMode?: GenuiPromptMode
+  /**
+   * When false, the composer sparkle control is not registered.
+   * Card rendering and prompt injection keep working from the last chosen tier.
+   */
+  showPromptToggle: boolean
 }
 
 const PromptModeSchema = z.union([
@@ -80,12 +87,14 @@ export const Config: z<Config> = z.object({
   sectionName: z.string().default('genui:cards'),
   promptEnabled: z.boolean().default(true).extra('volatile', true),
   promptMode: PromptModeSchema.extra('volatile', true),
+  showPromptToggle: z.boolean().default(true).extra('volatile', true),
 })
 
 /** Settings schema for the user's last prompt-mode choice. */
 export const PromptSettings: z<GenuiPromptSettings> = z.object({
   enabled: z.boolean().default(true),
   mode: PromptModeSchema,
+  showPromptToggle: z.boolean().default(true),
 })
 
 const CONTINUE_CHAT = {
@@ -140,10 +149,19 @@ export function apply(ctx: Context, config: Config): void {
   // The endpoint must read through this indirection because settings attach
   // asynchronously after the web route has already been registered.
   let currentControl: Pick<GenuiPromptControl, 'mode' | 'set'> = promptControl
+  let showPromptToggle = config.showPromptToggle !== false
+  let persistUi: ((state: { mode: GenuiPromptMode; showPromptToggle: boolean }) => void) | undefined
   let persistedAttached = false
-  const endpointControl: Pick<GenuiPromptControl, 'mode' | 'set'> & { persisted(): boolean } = {
+  const endpointControl: GenuiPromptUiControl = {
     mode: () => currentControl.mode(),
     set: mode => currentControl.set(mode),
+    showPromptToggle: () => showPromptToggle,
+    setShowPromptToggle(show) {
+      if (show === showPromptToggle) return showPromptToggle
+      showPromptToggle = show
+      persistUi?.({ mode: currentControl.mode(), showPromptToggle })
+      return showPromptToggle
+    },
     persisted: () => persistedAttached,
   }
 
@@ -158,6 +176,7 @@ export function apply(ctx: Context, config: Config): void {
     const scope = openPromptSettings(settings, {
       configMode: config.promptMode,
       configEnabled: config.promptEnabled !== false,
+      configShowPromptToggle: config.showPromptToggle,
       schema: PromptSettings,
     })
     if (scope === undefined) {
@@ -166,16 +185,27 @@ export function apply(ctx: Context, config: Config): void {
     }
     ctx.logger.debug('dsh-genui: settings service attached')
     settingsCtx.effect(() => {
+      showPromptToggle = scope.get().showPromptToggle !== false
       // Persist explicit choices, but never write the unload-time cleanup state.
-      const persistedControl = createPersistedPromptControl(promptControl, scope, DEFAULT_PROMPT_MODE, error => {
-        ctx.logger.warn('dsh-genui: failed to persist prompt state', error)
-      }, mode => {
-        ctx.logger.debug('dsh-genui: persisting prompt state mode=%s', mode)
+      const persistedControl = createPersistedPromptControl(promptControl, scope, DEFAULT_PROMPT_MODE, {
+        getShowPromptToggle: () => showPromptToggle,
+        onError: error => {
+          ctx.logger.warn('dsh-genui: failed to persist prompt state', error)
+        },
+        onPersist: mode => {
+          ctx.logger.debug('dsh-genui: persisting prompt state mode=%s', mode)
+        },
       })
       currentControl = persistedControl
+      persistUi = state => {
+        persistPromptUiState(scope, state, error => {
+          ctx.logger.warn('dsh-genui: failed to persist prompt UI state', error)
+        })
+      }
       persistedAttached = true
       return () => {
         currentControl = promptControl
+        persistUi = undefined
         persistedAttached = false
       }
     }, 'dsh-genui: persisted prompt control')

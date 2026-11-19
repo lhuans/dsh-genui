@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
-import { GENUI_PROMPT_CONTROL_URL } from '../prompt-control-url.ts'
+import { DEFAULT_PROMPT_MODE, type GenuiPromptMode } from '../prompt-mode.ts'
 import {
-  isGenuiPromptMode,
-  type GenuiPromptMode,
-} from '../prompt-mode.ts'
+  fetchPromptUiState,
+  postPromptUiState,
+  publishPromptUiState,
+  subscribePromptUiState,
+} from './prompt-settings-api.ts'
 import {
   PROMPT_MODE_MENU_MODES,
   promptModeOptionKey,
@@ -28,7 +30,7 @@ const SparkleIcon = pickSparkleIcon(primitives)
 
 export function PromptToggleButton({ t }: PromptToggleButtonProps) {
   const text = (key: PromptModeCopyKey) => promptModeText(t, key)
-  const [mode, setMode] = useState<GenuiPromptMode>('standard')
+  const [mode, setMode] = useState<GenuiPromptMode>(DEFAULT_PROMPT_MODE)
   const [available, setAvailable] = useState(false)
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(false)
@@ -40,21 +42,33 @@ export function PromptToggleButton({ t }: PromptToggleButtonProps) {
   useEffect(() => {
     let active = true
     const controller = new AbortController()
-    fetch(GENUI_PROMPT_CONTROL_URL, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(String(response.status))
-        const state = await response.json() as { mode?: unknown }
-        if (!active) return
-        if (!isGenuiPromptMode(state.mode)) throw new Error('bad-mode')
-        setMode(state.mode)
-        setAvailable(true)
-      })
-      .catch(() => {
-        if (active) setAvailable(false)
-      })
+    const refresh = () => {
+      void fetchPromptUiState(controller.signal)
+        .then((state) => {
+          if (!active) return
+          setMode(state.mode)
+          setAvailable(true)
+          publishPromptUiState(state)
+        })
+        .catch(() => {
+          if (active) setAvailable(false)
+        })
+    }
+    refresh()
+    const unsubscribe = subscribePromptUiState((state) => {
+      if (!active) return
+      setMode(state.mode)
+      setAvailable(true)
+    })
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       active = false
       controller.abort()
+      unsubscribe()
+      document.removeEventListener('visibilitychange', onVisibility)
     }
   }, [])
 
@@ -77,14 +91,7 @@ export function PromptToggleButton({ t }: PromptToggleButtonProps) {
     setBusy(true)
     setMode(next)
     try {
-      const response = await fetch(GENUI_PROMPT_CONTROL_URL, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: next }),
-      })
-      if (!response.ok) throw new Error(String(response.status))
-      const state = await response.json() as { mode?: unknown }
-      if (!isGenuiPromptMode(state.mode)) throw new Error('bad-mode')
+      const state = await postPromptUiState({ mode: next })
       setMode(state.mode)
       setAvailable(true)
     } catch {

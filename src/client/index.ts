@@ -9,8 +9,17 @@ import { captureBuiltinAssistant, type AssistantStepEntry } from './builtin-assi
 import { borrowReasoningBody, releaseBorrowedReasoningBody, type BorrowableSlotEntry } from './reasoning-body.ts'
 import { en, zh, type PromptModeCopy } from './prompt-mode-copy.ts'
 import { PromptToggleButton } from './prompt-toggle-button.tsx'
+import { GenuiBundleConfig } from './genui-bundle-config.tsx'
+import {
+  fetchPromptUiState,
+  publishPromptUiState,
+  subscribePromptUiState,
+} from './prompt-settings-api.ts'
 
 export const inject = ['slots', 'locale']
+
+/** Package name used as the Plugins bundle-config slot key. */
+const BUNDLE_CONFIG_KEY = 'dsh-genui'
 
 /** Host locale service. DSH falls other languages back to the English dictionary. */
 interface LocaleHost {
@@ -28,17 +37,78 @@ export function apply(ctx: Context): void {
     inject(name: string, register: () => () => void): () => void
   } }
   ctx.effect(() => locale.register('dsh-genui', { zh, en }), 'dsh-genui: prompt mode copy')
-  host.slots.inject('conversation.input.left', () => host.slots.register({
-    name: 'conversation.input.left',
-    id: 'genui-prompt-toggle',
-    order: 0,
+  host.slots.inject('plugins.bundle.config', () => host.slots.register({
+    name: 'plugins.bundle.config',
+    key: BUNDLE_CONFIG_KEY,
     locale: 'dsh-genui',
-  }, PromptToggleButton))
+  }, GenuiBundleConfig))
   // ui-chat owns assistant-step renderers and uses the `chat` locale namespace.
   // Omitting `locale` leaves `t` undefined and the view crashes; the slot then
   // abdicates to the built-in assistant-step (schemaJson shows as a Markdown
   // code fence — the failure mode users hit).
   host.slots.inject('conversation.chat.node', () => registerAssistantStep(host))
+  ctx.effect(() => watchComposerToggle(host), 'dsh-genui: composer prompt toggle')
+}
+
+/**
+ * Register or tear down the composer sparkle control from live settings.
+ * Hidden means the slot is absent (no leftover tab stop), not CSS-hidden.
+ */
+function watchComposerToggle(host: Context & { slots: AssistantSlotLedger & {
+  inject(name: string, register: () => () => void): () => void
+} }): () => void {
+  let disposeToggle: (() => void) | undefined
+  let active = true
+  const controller = new AbortController()
+
+  const sync = (show: boolean) => {
+    if (!active) return
+    if (show) {
+      if (disposeToggle !== undefined) return
+      disposeToggle = host.slots.inject('conversation.input.left', () => host.slots.register({
+        name: 'conversation.input.left',
+        id: 'genui-prompt-toggle',
+        order: 0,
+        locale: 'dsh-genui',
+      }, PromptToggleButton))
+      return
+    }
+    disposeToggle?.()
+    disposeToggle = undefined
+  }
+
+  // Default on until the first successful read, matching Config default true.
+  sync(true)
+
+  const refresh = () => {
+    void fetchPromptUiState(controller.signal)
+      .then((state) => {
+        if (!active) return
+        publishPromptUiState(state)
+        sync(state.showPromptToggle)
+      })
+      .catch(() => {
+        // Keep the last known visibility when the endpoint is briefly unavailable.
+      })
+  }
+
+  refresh()
+  const unsubscribe = subscribePromptUiState((state) => {
+    sync(state.showPromptToggle)
+  })
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') refresh()
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+
+  return () => {
+    active = false
+    controller.abort()
+    unsubscribe()
+    document.removeEventListener('visibilitychange', onVisibility)
+    disposeToggle?.()
+    disposeToggle = undefined
+  }
 }
 
 /** Ledger face used to find the shadow entry after it registers. */

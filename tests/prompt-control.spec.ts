@@ -6,7 +6,10 @@ import {
   createPersistedPromptControl,
   findPromptSettingsEntry,
   openPromptSettings,
+  persistPromptUiState,
+  type GenuiPromptControl,
   type GenuiPromptSettings,
+  type GenuiPromptUiControl,
 } from '../src/prompt-control.ts'
 import { resolvePromptMode } from '../src/prompt-mode.ts'
 
@@ -56,6 +59,23 @@ function parseBody(response: ServerResponse & { bodyOut: unknown }): Record<stri
   return JSON.parse(String(response.bodyOut)) as Record<string, unknown>
 }
 
+function withUi(control: GenuiPromptControl, show = true): GenuiPromptUiControl {
+  let showPromptToggle = show
+  return {
+    mode: control.mode,
+    set: mode => control.set(mode),
+    showPromptToggle: () => showPromptToggle,
+    setShowPromptToggle(next) {
+      showPromptToggle = next
+      return showPromptToggle
+    },
+  }
+}
+
+const persistOptions = {
+  getShowPromptToggle: () => true,
+}
+
 describe('resolvePromptMode', () => {
   it('keeps a stored tier and maps the old off toggle', () => {
     expect(resolvePromptMode({ mode: 'plus', enabled: false })).toBe('plus')
@@ -100,7 +120,7 @@ describe('createPersistedPromptControl', () => {
   it('initializes from settings and mirrors explicit changes', async () => {
     const dispose = vi.fn()
     const registered: Array<Record<string, unknown>> = []
-    const updates: Array<{ mode: GenuiPromptSettings['mode']; enabled: boolean }> = []
+    const updates: Array<{ mode: GenuiPromptSettings['mode']; enabled: boolean; showPromptToggle: boolean }> = []
     let stored: GenuiPromptSettings = { enabled: false }
     const control = createPersistedPromptControl(
       createGenuiPromptControl(section, {
@@ -118,6 +138,7 @@ describe('createPersistedPromptControl', () => {
         },
       },
       'standard',
+      persistOptions,
     )
 
     expect(control.mode()).toBe('off')
@@ -125,14 +146,14 @@ describe('createPersistedPromptControl', () => {
 
     expect(control.set('standard')).toBe('standard')
     await Promise.resolve()
-    expect(updates).toEqual([{ mode: 'standard', enabled: true }])
+    expect(updates).toEqual([{ mode: 'standard', enabled: true, showPromptToggle: true }])
     expect(registered).toEqual([{ name: 'genui:cards', order: 80, text: 'standard prompt' }])
 
     expect(control.set('off')).toBe('off')
     await Promise.resolve()
     expect(updates).toEqual([
-      { mode: 'standard', enabled: true },
-      { mode: 'off', enabled: false },
+      { mode: 'standard', enabled: true, showPromptToggle: true },
+      { mode: 'off', enabled: false, showPromptToggle: true },
     ])
     expect(control.isEnabled()).toBe(false)
   })
@@ -151,6 +172,7 @@ describe('createPersistedPromptControl', () => {
         update: () => Promise.resolve(),
       },
       'standard',
+      persistOptions,
     )
 
     expect(control.mode()).toBe('mini')
@@ -165,6 +187,7 @@ describe('createPersistedPromptControl', () => {
         update: () => Promise.resolve(),
       },
       'plus',
+      persistOptions,
     )
 
     expect(control.mode()).toBe('plus')
@@ -179,7 +202,7 @@ describe('createPersistedPromptControl', () => {
         update: () => Promise.reject(new Error('persist-failed')),
       },
       'standard',
-      onError,
+      { ...persistOptions, onError },
     )
 
     expect(control.set('off')).toBe('off')
@@ -189,35 +212,66 @@ describe('createPersistedPromptControl', () => {
   })
 })
 
-describe('createGenuiPromptControlHandler', () => {
-  it('reads the initial mode and updates it with POST', async () => {
-    const control = createGenuiPromptControl(section, {
-      section: () => () => {},
+describe('persistPromptUiState', () => {
+  it('writes mode and composer visibility together', async () => {
+    const update = vi.fn(async () => {})
+    persistPromptUiState({
+      get: () => ({ mode: 'standard', enabled: true, showPromptToggle: true }),
+      update,
+    }, { mode: 'mini', showPromptToggle: false })
+    await Promise.resolve()
+    expect(update).toHaveBeenCalledWith({
+      mode: 'mini',
+      enabled: true,
+      showPromptToggle: false,
     })
+  })
+})
+
+describe('createGenuiPromptControlHandler', () => {
+  it('reads the initial UI state and updates mode with POST', async () => {
+    const control = withUi(createGenuiPromptControl(section, {
+      section: () => () => {},
+    }))
     const handler = createGenuiPromptControlHandler(control)
 
     const read = mockRes()
     await handler(mockReq('GET'), read)
     expect(read.statusCodeOut).toBe(200)
-    expect(parseBody(read)).toEqual({ mode: 'off' })
+    expect(parseBody(read)).toEqual({ mode: 'off', showPromptToggle: true })
 
     const enable = mockRes()
     await handler(mockReq('POST', [JSON.stringify({ mode: 'plus' })]), enable)
     expect(enable.statusCodeOut).toBe(200)
-    expect(parseBody(enable)).toEqual({ mode: 'plus' })
+    expect(parseBody(enable)).toEqual({ mode: 'plus', showPromptToggle: true })
     expect(control.mode()).toBe('plus')
 
     const disable = mockRes()
     await handler(mockReq('POST', [JSON.stringify({ mode: 'off' })]), disable)
     expect(disable.statusCodeOut).toBe(200)
-    expect(parseBody(disable)).toEqual({ mode: 'off' })
-    expect(control.isEnabled()).toBe(false)
+    expect(parseBody(disable)).toEqual({ mode: 'off', showPromptToggle: true })
+    expect(control.mode()).toBe('off')
+  })
+
+  it('updates composer visibility without requiring a mode', async () => {
+    const control = withUi(createGenuiPromptControl(section, {
+      section: () => () => {},
+    }), true)
+    control.set('standard')
+    const handler = createGenuiPromptControlHandler(control)
+
+    const hide = mockRes()
+    await handler(mockReq('POST', [JSON.stringify({ showPromptToggle: false })]), hide)
+    expect(hide.statusCodeOut).toBe(200)
+    expect(parseBody(hide)).toEqual({ mode: 'standard', showPromptToggle: false })
+    expect(control.showPromptToggle()).toBe(false)
+    expect(control.mode()).toBe('standard')
   })
 
   it('rejects unsupported methods and malformed bodies', async () => {
-    const control = createGenuiPromptControl(section, {
+    const control = withUi(createGenuiPromptControl(section, {
       section: () => () => {},
-    })
+    }))
     const handler = createGenuiPromptControlHandler(control)
 
     const put = mockRes()
@@ -251,15 +305,20 @@ describe('openPromptSettings', () => {
     expect(scope?.get().mode).toBe('mini')
   })
 
-  it('writes promptMode and promptEnabled on the DSH 0.2 entry that owns the field', async () => {
+  it('writes promptMode, promptEnabled, and showPromptToggle on the DSH 0.2 entry', async () => {
     const update = vi.fn(async () => {})
     const scope = openPromptSettings({
       describe: () => [{ ns: 'genui', value: { promptEnabled: false }, schema: {} }],
       update,
-    }, { configEnabled: false, schema: {} })
+    }, { configEnabled: false, configShowPromptToggle: false, schema: {} })
     expect(resolvePromptMode(scope?.get())).toBe('off')
-    await scope?.update({ mode: 'plus', enabled: true })
-    expect(update).toHaveBeenCalledWith('genui', { promptMode: 'plus', promptEnabled: true })
+    expect(scope?.get().showPromptToggle).toBe(false)
+    await scope?.update({ mode: 'plus', enabled: true, showPromptToggle: true })
+    expect(update).toHaveBeenCalledWith('genui', {
+      promptMode: 'plus',
+      promptEnabled: true,
+      showPromptToggle: true,
+    })
   })
 
   it('falls back to the bundled entry id before describe can see this plugin', async () => {
@@ -268,8 +327,12 @@ describe('openPromptSettings', () => {
       describe: () => [],
       update,
     }, { configMode: 'standard', configEnabled: true, schema: {} })
-    await scope?.update({ mode: 'off', enabled: false })
-    expect(update).toHaveBeenCalledWith('genui', { promptMode: 'off', promptEnabled: false })
+    await scope?.update({ mode: 'off', enabled: false, showPromptToggle: true })
+    expect(update).toHaveBeenCalledWith('genui', {
+      promptMode: 'off',
+      promptEnabled: false,
+      showPromptToggle: true,
+    })
   })
 })
 
