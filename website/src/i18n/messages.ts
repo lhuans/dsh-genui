@@ -143,7 +143,7 @@ export const en: Messages = {
   },
   howItWorks: {
     title: 'How it works',
-    body: 'The plugin adds a prompt that teaches the model to output structured JSON in `schemaJson` code blocks when a UI helps. The composer sparkle menu is labeled 关闭, 精简, 标准, and 全量, and starts on 标准. Hover an item to see what it includes. DSH renders that JSON into real components via OpenTiny GenUI SDK — streaming as the model writes, and keeping already rendered cards visible if generation is paused. Components are whitelisted; no arbitrary HTML or scripts.',
+    body: 'The plugin adds a prompt that teaches the model to output structured JSON in `schemaJson` code blocks when a UI helps. The composer sparkle menu is labeled Off, Mini, Standard, and Plus, and starts on Standard. Hover an item to see what it includes. DSH renders that JSON into real components via OpenTiny GenUI SDK — streaming as the model writes, and keeping already rendered cards visible if generation is paused. Components are whitelisted; no arbitrary HTML or scripts.',
   },
   install: {
     title: 'Install',
@@ -154,7 +154,7 @@ export const en: Messages = {
       'Run the install command above in a new terminal',
       'Stop DSH (Ctrl+C), restart with `dsh web`, refresh browser, open a new session',
     ],
-    enable: 'GenUI authoring starts on 标准 and remembers your last choice after DSH restarts. Use the sparkle menu in the composer tool row to pick 关闭, 精简, 标准, or 全量. Hover an item for a short explanation. Card rendering stays installed.',
+    enable: 'GenUI authoring starts on Standard and remembers your last choice after DSH restarts. Use the sparkle menu in the composer tool row to pick Off, Mini, Standard, or Plus. Hover an item for a short explanation. Card rendering stays installed.',
     toggleImageAlt: 'DSH composer showing the sparkle menu for GenUI prompt modes.',
     verify: 'In a new session, say "generate a calculator". If keys appear and work, you\'re set.',
     remove: 'Remove: `dsh plugin --profile web remove dsh-genui` (restart required).',
@@ -172,7 +172,7 @@ export const en: Messages = {
       },
       {
         q: 'AI not using UI by default?',
-        a: '标准 is the default. If it gets stuck on text, pick 精简, 标准, or 全量 in the sparkle menu, then ask: "answer with a chart/form/interface".',
+        a: 'Standard is the default. If it gets stuck on text, pick Mini, Standard, or Plus in the sparkle menu, then ask: "answer with a chart/form/interface".',
       },
       {
         q: 'Breaks plain text replies?',
