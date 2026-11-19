@@ -18,6 +18,7 @@ import { dirname, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
+import { GENUI_CSS_REGISTRY_KEY } from '../src/client/genui-runtime-styles.ts'
 import { PLATFORM_MODULES } from './web-platform.ts'
 
 /**
@@ -210,7 +211,7 @@ export function runtimeBundle(id: string, entry: string, portableCssModuleIds = 
       // CJS client.js resolved vue.cjs.prod.js, which inlines them already.
       ...vueFeatureFlags(),
     },
-    plugins: browserInlinePlugins(id, portableCssModuleIds),
+    plugins: browserInlinePlugins(id, portableCssModuleIds, true),
     outputOptions: {
       entryFileNames: 'genui-runtime.js',
       // One file: extra rolldown chunks would 404 (DSH has no asset route).
@@ -378,7 +379,7 @@ function resolveCssFile(specifier: string, importer: string | undefined): string
 }
 
 /** Inline binary assets and CSS (modules + global) for a self-contained browser bundle. */
-function browserInlinePlugins(id: string, portableCssModuleIds: boolean) {
+function browserInlinePlugins(id: string, portableCssModuleIds: boolean, restoreStyles = false) {
   const cssFiles = new Map<string, string>()
   return [{
     name: 'dsh-binary-assets-inline',
@@ -438,16 +439,28 @@ function browserInlinePlugins(id: string, portableCssModuleIds: boolean) {
         cssText = source.toString('utf8')
       }
       // One <style data-plugin> per module file; idempotent under re-evaluation.
+      // The runtime bundle also records the text so the thin client can put the
+      // tags back after DSH's loader deletes plugin-owned styles on a live
+      // reload (the ESM runtime itself never re-evaluates).
+      const tagId = `${id}/${sourceId.split(sep).join('/')}`
       return [
         `const css = ${JSON.stringify(cssText)};`,
-        `const tagId = ${JSON.stringify(`${id}/${sourceId.split(sep).join('/')}`)};`,
-        'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
-        '  const tag = document.createElement(\'style\');',
+        `const tagId = ${JSON.stringify(tagId)};`,
+        ...(restoreStyles
+          ? [
+              `if (typeof globalThis !== 'undefined') {`,
+              `  const registry = (globalThis[${JSON.stringify(GENUI_CSS_REGISTRY_KEY)}] ??= new Map());`,
+              `  registry.set(tagId, css);`,
+              `}`,
+            ]
+          : []),
+        `if (typeof document !== 'undefined' && document.querySelector('style[data-plugin-css=' + JSON.stringify(tagId) + ']') === null) {`,
+        `  const tag = document.createElement('style');`,
         `  tag.dataset.plugin = ${JSON.stringify(id)};`,
-        '  tag.dataset.pluginCss = tagId;',
-        '  tag.textContent = css;',
-        '  document.head.appendChild(tag);',
-        '}',
+        `  tag.dataset.pluginCss = tagId;`,
+        `  tag.textContent = css;`,
+        `  document.head.appendChild(tag);`,
+        `}`,
         `export default ${JSON.stringify(classMap)};`,
       ].join('\n')
     },

@@ -45,4 +45,14 @@ describe('client bundle split', () => {
     expect(src).toContain('cloud-dark')
     expect(src).toContain('cloud-light')
   })
+
+  it('records runtime stylesheets so the thin client can restore them after a reload', () => {
+    const bundle = resolve('lib/genui-runtime.js')
+    if (!existsSync(bundle)) return // dev checkout without a build
+    const src = readFileSync(bundle, 'utf8')
+    // DSH's loader deletes style[data-plugin="dsh-genui"] on a live plugin
+    // reload while the custom element survives; the runtime records its CSS in
+    // this global registry so ensureGenuiRuntimeStyles() can re-add it.
+    expect(src).toContain('__dshGenuiCss')
+  })
 })

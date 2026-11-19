@@ -37,13 +37,17 @@ export const GenuiVueCard = memo(function GenuiVueCard({
   ))
 
   useEffect(() => {
-    if (status !== 'loading') return
+    // Always call loadGenuiRuntime: when the CE is already defined (status
+    // starts as ready), this only restores styles wiped by a live plugin
+    // reload; when still loading, it fetches the runtime first.
+    if (status === 'error') return
     let cancelled = false
+    const wasLoading = status === 'loading'
     void loadGenuiRuntime().then(
-      () => { if (!cancelled) setStatus('ready') },
+      () => { if (!cancelled && wasLoading) setStatus('ready') },
       (err: unknown) => {
         console.error(err)
-        if (!cancelled) setStatus('error')
+        if (!cancelled && wasLoading) setStatus('error')
       },
     )
     return () => { cancelled = true }

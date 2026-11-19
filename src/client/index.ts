@@ -5,6 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { ASSISTANT_STEP_PRIORITY, GenuiAssistantNodeView } from './GenuiAssistantNodeView.tsx'
 import { prefetchGenuiRuntime } from './load-genui-runtime.ts'
+import { ensureGenuiRuntimeStyles } from './genui-runtime-styles.ts'
 import { captureBuiltinAssistant, type AssistantStepEntry } from './builtin-assistant.ts'
 import { borrowReasoningBody, releaseBorrowedReasoningBody, type BorrowableSlotEntry } from './reasoning-body.ts'
 import { en, zh, type PromptModeCopy } from './prompt-mode-copy.ts'
@@ -31,6 +32,10 @@ interface LocaleHost {
  * @param ctx - browser Cordis context with the slot service.
  */
 export function apply(ctx: Context): void {
+  // A live plugin reload deletes this plugin's style tags before re-running
+  // apply(). Heal synchronously: the idle prefetch below can be starved in a
+  // busy tab, leaving cards that survived the reload unstyled until then.
+  ensureGenuiRuntimeStyles()
   prefetchGenuiRuntime()
   const locale = (ctx as Context & { locale: LocaleHost }).locale
   const host = ctx as Context & { slots: AssistantSlotLedger & {
