@@ -14,6 +14,7 @@ import { plusMaterials } from '@opentiny/genui-sdk-materials-vue-opentiny-vue/ma
 import '@opentiny/tiny-robot/dist/style.css'
 import { DSH_GENUI_CARD_TAG } from './genui-card-tag.ts'
 import { DARK_ATTR, isDarkMode, parseThemedContent } from './genui-theme.ts'
+import { ensureGenuiRuntimeStyles } from './genui-runtime-styles.ts'
 import './genui-card-host.css'
 
 export { DSH_GENUI_CARD_TAG }
@@ -41,6 +42,9 @@ const DshGenuiCard = defineComponent({
     // preference is "system"). body[data-ds-dark-theme] is the stable signal.
     let observer: MutationObserver | undefined
     onMounted(() => {
+      // Heal the card after DSH's module loader dropped the runtime styles on a
+      // live plugin reload (see genui-runtime-styles.ts).
+      ensureGenuiRuntimeStyles()
       observer = new MutationObserver(() => {
         const dark = isDarkMode()
         const next = dark ? 'dark' : 'light'
