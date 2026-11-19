@@ -260,14 +260,16 @@ export function createGenuiPromptControlHandler(
     }
     try {
       const payload = await readJsonObject(req)
-      const hasMode = isGenuiPromptMode(payload.mode)
-      const hasShow = typeof payload.showPromptToggle === 'boolean'
-      if (!hasMode && !hasShow) {
+      const mode = isGenuiPromptMode(payload.mode) ? payload.mode : undefined
+      const showPromptToggle = typeof payload.showPromptToggle === 'boolean'
+        ? payload.showPromptToggle
+        : undefined
+      if (mode === undefined && showPromptToggle === undefined) {
         respond(res, 400, { error: 'mode-or-show-required' })
         return
       }
-      if (hasMode) control.set(payload.mode)
-      if (hasShow) control.setShowPromptToggle(payload.showPromptToggle)
+      if (mode !== undefined) control.set(mode)
+      if (showPromptToggle !== undefined) control.setShowPromptToggle(showPromptToggle)
       respond(res, 200, {
         mode: control.mode(),
         showPromptToggle: control.showPromptToggle(),
