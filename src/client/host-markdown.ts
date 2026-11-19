@@ -15,6 +15,12 @@ export interface HostMarkdownProps {
   streaming?: boolean
   labels: GenuiMarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
+  /**
+   * Present this text as a Chat text-interaction source. The built-in
+   * assistant view sets it on settled prose only; hosts before 0.2.2 ignore
+   * the extra prop, which keeps the cast compatible with 0.0.1 typings.
+   */
+  textInteractionSource?: boolean | undefined
 }
 
 /** Host markdown renderer. Kept out of markdown-labels so unit tests do not load its CSS. */

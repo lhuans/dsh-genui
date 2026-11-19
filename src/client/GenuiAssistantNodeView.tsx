@@ -46,6 +46,10 @@ const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeVie
   const data = node.data
   const streaming = data.status === 'running'
   const interrupted = data.status === 'interrupted'
+  // Match the built-in view: only settled prose with a durable message ID
+  // may be offered to Chat as a text-interaction source.
+  const textInteractionSource =
+    data.status === 'settled' && data.finalNode?.messageId !== undefined
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
     : undefined
@@ -117,6 +121,7 @@ const AssistantReply = memo(function AssistantReply(props: GenuiAssistantNodeVie
             labels={labels}
             mentions={mentions}
             customActions={customActions}
+            textInteractionSource={textInteractionSource}
           />,
         )
         break
